@@ -7,7 +7,7 @@ module nPC(
 
 wire [31:0] seq_pc;
 
-assign seq_pc       = currentPC + 3'h4;
+assign seq_pc       = currentPC + 32'h4;
 assign nextpc       = br_taken ? br_target : seq_pc;
 
 endmodule

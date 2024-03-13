@@ -115,4 +115,68 @@ assign i20  = inst[24: 5];
 assign i16  = inst[25:10];
 assign i26  = {inst[ 9: 0], inst[25:10]};
 
+
+
+/*
+wire ID_en;// not used
+wire write_back_en;
+wire mem_access_en;
+assign write_back_en = ~(inst_b | inst_bne | inst_beq | inst_st_w);
+assign mem_access_en = inst_st_w | inst_ld_w;
+assign ID_en = 1'b1;
+
+assign br_offs = need_si26 ? {{ 4{i26[25]}}, i26[25:0], 2'b0} :
+                             {{14{i16[15]}}, i16[15:0], 2'b0} ;
+
+assign jirl_offs = {{14{i16[15]}}, i16[15:0], 2'b0};
+
+assign rj_eq_rd = (rj_value == rkd_value);
+
+assign br_taken = (   inst_beq  &&  rj_eq_rd
+                   || inst_bne  && !rj_eq_rd
+                   || inst_jirl
+                   || inst_bl
+                   || inst_b
+                  ) && valid;
+assign br_target = (inst_beq || inst_bne || inst_bl || inst_b) ? (pc + br_offs) :
+                                                    (rj_value + jirl_offs);
+
+assign rf_or_mem  = inst_ld_w;
+assign dst_is_r1     = inst_bl;
+assign gr_we         = ~inst_st_w & ~inst_beq & ~inst_bne & ~inst_b;
+
+assign dest          = dst_is_r1 ? 5'd1 : rd;
+assign src_reg_is_rd = inst_beq | inst_bne | inst_st_w;
+
+assign rf_raddr1 = rj;
+assign rf_raddr2 = src_reg_is_rd ? rd :rk;
+
+
+assign imm = src2_is_4 ? 32'h4                      :
+             need_si20 ? {i20[19:0], 12'b0}         :
+             need_ui5  ? rk                         :
+            {{20{i12[11]}}, i12[11:0]} ;
+
+
+assign src1_is_pc    = inst_jirl | inst_bl;
+assign src2_is_imm   = inst_slli_w |
+                       inst_srli_w |
+                       inst_srai_w |
+                       inst_addi_w |
+                       inst_ld_w   |
+                       inst_st_w   |
+                       inst_lu12i_w|
+                       inst_jirl   |
+                       inst_bl     ;
+
+assign rj_value  = rf_rdata1;
+assign rkd_value = rf_rdata2;
+
+assign alu_src1 = src1_is_pc  ? pc : rj_value;
+assign alu_src2 = src2_is_imm ? imm : rkd_value;
+assign mem_we        = inst_st_w;
+
+*/
+
+
 endmodule

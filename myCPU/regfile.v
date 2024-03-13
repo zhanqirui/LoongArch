@@ -12,6 +12,14 @@ module regfile(
     input  wire [31:0] wdata
 );
 reg [31:0] rf[31:0];
+integer i;
+
+initial begin
+    for(i = 0; i <= 31;i = i + 1)begin
+        rf[i] = 32'b0;
+    end
+
+end
 
 //WRITE
 always @(posedge clk) begin
