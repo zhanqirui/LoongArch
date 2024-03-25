@@ -21,13 +21,15 @@ reg [`MS_TO_WS_WD - 1: 0] r_ms_to_ws_bus;
 wire ws_ready_go, ws_to_rf_valid, rf_we_WB;
 reg ws_valid;
 always@(posedge clk)
-    if(!rst)
+    if(rst)
         ws_valid <= 0;
     else if(ws_allow_in)
         ws_valid <= ms_to_ws_valid;
 
 always@(posedge clk)
-    if(ms_to_ws_valid && ws_allow_in)
+    if(rst)
+        r_ms_to_ws_bus <= 0;
+    else if(ms_to_ws_valid && ws_allow_in)
         r_ms_to_ws_bus <= ms_to_ws_bus;
 
 // assign ms_to_ws_bus = {rf_we, dest_WB, pc_WB, final_result_WB};
@@ -35,7 +37,7 @@ assign {rf_we_WB, dest_WB, pc_WB, final_result_WB} = r_ms_to_ws_bus;
 
 assign ws_ready_go = 1'b1;
 assign ws_to_rf_valid = ws_ready_go && ws_valid;
-assign ws_allow_in = !ws_valid || ws_ready_go && rf_we_WB;
+assign ws_allow_in = !ws_valid || ws_ready_go;
 
 assign ws_to_rf_bus = {rf_we_WB, dest_WB, final_result_WB};
 assign rf_we_out = {4{rf_we_WB}};

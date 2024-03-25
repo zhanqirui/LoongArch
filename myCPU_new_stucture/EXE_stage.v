@@ -29,7 +29,9 @@ wire [31:0] alu_result_EXE;
 wire [31:0] pc_EXE;
 
 always@(posedge clk)
-    if(ds_to_es_valid && es_allow_in)
+    if(rst)
+        r_ds_to_es_bus <= 0;
+    else if(ds_to_es_valid && es_allow_in)
         r_ds_to_es_bus <= ds_to_es_bus;
 
 assign {rf_or_mem_EXE, mem_en_EXE, rf_we_EXE, dest_EXE, alu_op_EXE, pc_EXE,  rkd_value_EXE, alu_src1_EXE, alu_src2_EXE} = r_ds_to_es_bus;
@@ -42,7 +44,7 @@ assign es_to_ms_valid = es_ready_go && es_valid;
 assign es_allow_in = !es_valid || es_ready_go && ms_allow_in;
 
 always@(posedge clk)
-    if(!rst)
+    if(rst)
         es_valid <= 0;
     else if(es_allow_in)
         es_valid <= ds_to_es_valid;

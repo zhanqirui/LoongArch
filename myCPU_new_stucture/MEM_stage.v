@@ -31,13 +31,15 @@ assign ms_allow_in = !ms_valid || ms_ready_go && ws_allow_in;
 assign ms_to_ws_valid = ms_ready_go && ms_valid;
 
 always@(posedge clk)
-    if(!rst)
+    if(rst)
         ms_valid <= 0;
-    else    
+    else if(ms_allow_in)  
         ms_valid <= es_to_ms_valid;
 
 always@(posedge clk)
-    if(ms_allow_in && es_to_ms_valid)
+    if(rst)
+        r_es_to_ms_bus <= 0;
+    else if(ms_allow_in && es_to_ms_valid)
         r_es_to_ms_bus <= es_to_ms_bus;
 
 // assign es_to_ms_bus = {rf_or_mem_MEM, rf_we_MEM, dest_MEM, pc_MEM, alu_result_MEM};

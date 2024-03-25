@@ -19,13 +19,13 @@ module IF_stage(
     output [`FS_TO_DS_WD - 1 : 0] fs_to_ds_bus,
     output wire fs_to_ds_valid
 );
-
+wire [31:0] nextpc;
 wire [31:0] seq_pc;
 //解决控制冒险所需要的信号
 wire [31:0] br_target;
 wire br_taken;
 
-reg pc_IF;
+reg [31:0] pc_IF;
 
 //为了更好的完成流水线的阻塞任务，此处新增握手信号
 
@@ -42,7 +42,8 @@ assign {br_taken, br_target} = br_bus;
 //由于inst_sram是时序逻辑，所以想要fs_to_ds_bus中的pc与inst对应，就应该传递nextpc给inst_sram
 assign pre_to_fs_valid = ~reset;
 assign seq_pc       = pc_IF + 32'h4;
-assign nextpc       = br_taken ? br_target : seq_pc;
+assign nextpc       = reset ? 32'h1bfffffc:
+                      br_taken ? br_target : seq_pc;
 
 
 
@@ -55,20 +56,20 @@ assign fs_to_ds_valid = fs_valid && fs_ready_go;
 
 //按理来说只要rst信号无效，就要一直读地址，所以valid信号一直有效
 always@(posedge clk)
-    if(!reset)
+    if(reset)
         fs_valid <= 1'b0;
     else if(fs_allow_in)
         fs_valid <= pre_to_fs_valid;
 
 always @(posedge clk) begin
-    if (!reset) begin
+    if (reset) begin
         pc_IF <= 32'h1bfffffc;     //trick: to make nextpc be 0x1c000000 during reset 
     end
     else
         if(pre_to_fs_valid && fs_allow_in)  pc_IF <= nextpc;
 end
 
-assign fs_to_ds_bus = IF_fresh ? {pc_IF, inst_sram_rdata} : {pc_IF, 32'b0};
+assign fs_to_ds_bus = !IF_fresh ? {pc_IF, inst_sram_rdata} : {pc_IF, 32'b0};
 
 assign inst_sram_we    = 4'b0;
 assign inst_sram_addr  = nextpc;
