@@ -42,17 +42,17 @@ assign es_to_ms_valid = es_ready_go && es_valid;
 assign es_allow_in = !es_valid || es_ready_go && ms_allow_in;
 
 always@(posedge clk)
-    if(rst)
+    if(!rst)
         es_valid <= 0;
     else if(es_allow_in)
         es_valid <= ds_to_es_valid;
 
 
 alu u_alu(
-    .alu_op_EXE(alu_op_EXE),
-    .alu_src1_EXE(alu_src1_EXE),
-    .alu_src2_EXE(alu_src2_EXE),
-    .alu_result_EXE(alu_result_EXE)
+    .alu_op(alu_op_EXE),
+    .alu_src1(alu_src1_EXE),
+    .alu_src2(alu_src2_EXE),
+    .alu_result(alu_result_EXE)
 );
 // 1 + 1 + 5 + 32 + 32 = 71
 assign es_to_ms_bus = {rf_or_mem_EXE, rf_we_EXE, dest_EXE, pc_EXE, alu_result_EXE};

@@ -19,7 +19,7 @@ output IF_fresh,
 //但是有一个问题，就是stall要持续多久呢？stall直接放在top里面
 //1.如果是EXE与ID冲突：IF/ID和ID/EXE阻塞两个周期
 //2.如果是MEM与ID冲突：IF/ID和ID/EXE阻塞一个周期
-
+output ds_allow_in,
 output ds_to_es_valid,
 output [`DS_TO_ES_WD - 1: 0] ds_to_es_bus,
 
@@ -32,7 +32,7 @@ wire [31:0] rf_wdata_WB;
 
 wire br_taken, rf_or_mem_ID, mem_we_ID, rf_we_ID;
 
-wire ds_ready_go, ds_allow_in;
+wire ds_ready_go;
 
 
 reg ds_valid;
@@ -55,7 +55,7 @@ assign ds_to_es_valid = ds_valid && ds_ready_go;
 assign ds_allow_in = !ds_valid || ds_ready_go && es_allow_in; 
 
 always@(posedge clk)
-    if(rst)
+    if(!rst)
         ds_valid <= 0;
     else if(ds_allow_in)
         ds_valid <= fs_to_ds_valid;

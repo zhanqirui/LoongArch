@@ -11,7 +11,8 @@ module IF_stage(
 
     input IF_fresh,
 
-    output  inst_sram_en, inst_sram_we,
+    output  inst_sram_en,
+    output [3:0] inst_sram_we,
 
     output [31:0] inst_sram_addr, inst_sram_wdata,
     //传递给ds的数据总线,以及握手信号
@@ -35,6 +36,8 @@ reg pc_IF;
 wire fs_ready_go, pre_to_fs_valid, fs_allow_in;
 reg fs_valid;
 
+assign {br_taken, br_target} = br_bus;
+
 //pre-IF阶段
 //由于inst_sram是时序逻辑，所以想要fs_to_ds_bus中的pc与inst对应，就应该传递nextpc给inst_sram
 assign pre_to_fs_valid = ~reset;
@@ -52,13 +55,13 @@ assign fs_to_ds_valid = fs_valid && fs_ready_go;
 
 //按理来说只要rst信号无效，就要一直读地址，所以valid信号一直有效
 always@(posedge clk)
-    if(reset)
+    if(!reset)
         fs_valid <= 1'b0;
     else if(fs_allow_in)
         fs_valid <= pre_to_fs_valid;
 
 always @(posedge clk) begin
-    if (reset) begin
+    if (!reset) begin
         pc_IF <= 32'h1bfffffc;     //trick: to make nextpc be 0x1c000000 during reset 
     end
     else

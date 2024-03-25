@@ -45,10 +45,27 @@ wire ds_allow_in;
 wire [`FS_TO_DS_WD - 1 : 0] fs_to_ds_bus;
 wire [`BR_TO_FS_WD - 1 : 0] br_bus;
 wire fs_to_ds_valid;
+    // input clk, reset,
+    
+    // input ds_allow_in,
+
+    // input [`BR_TO_FS_WD - 1 : 0] br_bus,
+
+    // input [31:0] inst_sram_rdata,
+
+    // input IF_fresh,
+
+    // output  inst_sram_en, inst_sram_we,
+
+    // output [31:0] inst_sram_addr, inst_sram_wdata,
+    // //传递给ds的数据总线,以及握手信号
+    // output [`FS_TO_DS_WD - 1 : 0] fs_to_ds_bus,
+    // output wire fs_to_ds_valid
 IF_stage U_IF_stage(
     .clk(clk),
     .reset(reset),
     .br_bus(br_bus),
+    .ds_allow_in(ds_allow_in),
     .inst_sram_rdata(inst_sram_rdata),
     .IF_fresh(IF_fresh),
 
@@ -78,6 +95,7 @@ ID_stage u_ID_stage(
     .rst(reset),
     .fs_to_ds_bus(fs_to_ds_bus),
     .fs_to_ds_valid(fs_to_ds_valid),
+    .ds_allow_in(ds_allow_in),
     .es_allow_in(es_allow_in),
     .ws_to_rf_bus(ws_to_rf_bus),
     .IF_fresh(IF_fresh),
@@ -126,7 +144,7 @@ wire ms_to_ws_valid;
 wire [`MS_TO_WS_WD-1:0] ms_to_ws_bus;
 MEM_stage U_MEM_stage(
     .clk(clk),
-    .rst(rst),
+    .rst(reset),
     .es_to_ms_valid(es_to_ms_valid),
     .es_to_ms_bus(es_to_ms_bus),
     .ws_allow_in(ws_allow_in),
@@ -138,20 +156,19 @@ MEM_stage U_MEM_stage(
 
 WB_stage U_WB_stage(
     .clk(clk),
-    .rst(rst),
+    .rst(reset),
     .ms_to_ws_valid(ms_to_ws_valid),
     .ms_to_ws_bus(ms_to_ws_bus),
     .ws_allow_in(ws_allow_in),
     .ws_to_rf_bus(ws_to_rf_bus),
-    .pc(debug_wb_pc),
+    .pc_WB(debug_wb_pc),
     .rf_we_out(debug_wb_rf_we),
-    .dest(debug_wb_rf_wnum),
-    .final_result(debug_wb_rf_wdata)
+    .dest_WB(debug_wb_rf_wnum),
+    .final_result_WB(debug_wb_rf_wdata)
 );
 
 // debug info generate
 
-assign inst_sram_en = 1'b1;
 assign data_sram_en = 1'b1;
 
 endmodule

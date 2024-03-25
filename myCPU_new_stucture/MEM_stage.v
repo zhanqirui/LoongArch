@@ -31,7 +31,7 @@ assign ms_allow_in = !ms_valid || ms_ready_go && ws_allow_in;
 assign ms_to_ws_valid = ms_ready_go && ms_valid;
 
 always@(posedge clk)
-    if(rst)
+    if(!rst)
         ms_valid <= 0;
     else    
         ms_valid <= es_to_ms_valid;

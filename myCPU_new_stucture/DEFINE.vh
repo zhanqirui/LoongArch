@@ -3,6 +3,6 @@
 `define ES_TO_MS_WD 71
 `define MS_TO_WS_WD 70
 
-`define WS_TO_RF_WD 37
+`define WS_TO_RF_WD 38
 
-`define BR_TO_FS_WD 5
+`define BR_TO_FS_WD 33
