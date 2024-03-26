@@ -6,3 +6,8 @@
 `define WS_TO_RF_WD 38
 
 `define BR_TO_FS_WD 33
+
+`define DS_TO_CHE_WD 11
+
+`define ES_TO_CHE_WD 6
+`define MS_TO_CHE_WD 6

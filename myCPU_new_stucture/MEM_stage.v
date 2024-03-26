@@ -16,7 +16,9 @@ module MEM_stage(
 
     //给下一级流水线
     output ms_to_ws_valid,
-    output [`MS_TO_WS_WD-1:0] ms_to_ws_bus
+    output [`MS_TO_WS_WD-1:0] ms_to_ws_bus,
+
+    output [`MS_TO_CHE_WD-1:0] ms_to_che_bus
 );
 
 reg [`ES_TO_MS_WD-1:0] r_es_to_ms_bus;
@@ -47,7 +49,7 @@ assign {rf_or_mem_MEM, rf_we_MEM, dest_MEM, pc_MEM, alu_result_MEM} = r_es_to_ms
 assign final_result_MEM = rf_or_mem_MEM ? data_sram_rdata : alu_result_MEM;
 // 1 + 5 + 32 + 32 = 70
 assign ms_to_ws_bus = {rf_we_MEM, dest_MEM, pc_MEM, final_result_MEM};
-
+assign ms_to_che_bus = {rf_we_MEM, dest_MEM};
 
 
 endmodule

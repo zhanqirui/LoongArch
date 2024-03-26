@@ -2,6 +2,8 @@
 
 module EXE_stage(
     input clk, rst,
+
+    input stall,
     //上一级流水线给的信息
     input  ds_to_es_valid,
     input  [`DS_TO_ES_WD - 1 : 0] ds_to_es_bus,
@@ -15,7 +17,9 @@ module EXE_stage(
 
     output [ 3:0] data_sram_we   ,
     output [31:0] data_sram_addr ,
-    output [31:0] data_sram_wdata
+    output [31:0] data_sram_wdata ,
+    //TODO新增es_to_che_bus
+    output [`ES_TO_CHE_WD-1:0] es_to_che_bus
 );
 
 reg [`DS_TO_ES_WD - 1 : 0] r_ds_to_es_bus;
@@ -39,7 +43,7 @@ assign {rf_or_mem_EXE, mem_en_EXE, rf_we_EXE, dest_EXE, alu_op_EXE, pc_EXE,  rkd
 reg es_valid;
 wire es_ready_go;
 
-assign es_ready_go = 1'b1;
+assign es_ready_go = ~stall;
 assign es_to_ms_valid = es_ready_go && es_valid;
 assign es_allow_in = !es_valid || es_ready_go && ms_allow_in;
 
@@ -56,10 +60,13 @@ alu u_alu(
     .alu_src2(alu_src2_EXE),
     .alu_result(alu_result_EXE)
 );
-// 1 + 1 + 5 + 32 + 32 = 71
+// 1 + 1 + 5 + 5 + 5 + 32 + 32 = 71
 assign es_to_ms_bus = {rf_or_mem_EXE, rf_we_EXE, dest_EXE, pc_EXE, alu_result_EXE};
+
 assign data_sram_we = {4{mem_en_EXE && es_valid}};
 assign data_sram_addr = alu_result_EXE;
 assign data_sram_wdata = rkd_value_EXE;
+
+assign es_to_che_bus = {rf_we_EXE, dest_EXE};
 
 endmodule

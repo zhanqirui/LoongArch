@@ -23,7 +23,10 @@ output ds_allow_in,
 output ds_to_es_valid,
 output [`DS_TO_ES_WD - 1: 0] ds_to_es_bus,
 
-output [`BR_TO_FS_WD - 1: 0] br_bus
+output [`BR_TO_FS_WD - 1: 0] br_bus,
+
+//TODO新增ds_to_che_bus
+output [`DS_TO_CHE_WD-1:0] ds_to_che_bus
 
 );
 wire rf_we_WB;
@@ -33,7 +36,7 @@ wire [31:0] rf_wdata_WB;
 wire br_taken, rf_or_mem_ID, mem_we_ID, rf_we_ID;
 
 wire ds_ready_go;
-
+wire is_imm;
 
 reg ds_valid;
 reg [`FS_TO_DS_WD - 1 : 0] r_fs_to_ds_bus;
@@ -42,31 +45,6 @@ wire [31:0] rkd_value_ID, br_target, alu_src1, alu_src2;
 wire  [4:0] dest_ID;
 wire [11:0] alu_op;
 wire [31 : 0] inst_ID, pc_ID;
-assign {pc_ID, inst_ID} = r_fs_to_ds_bus;
-
-assign ds_to_es_bus = {rf_or_mem_ID, mem_we_ID, rf_we_ID, dest_ID, alu_op, pc_ID,  rkd_value_ID, alu_src1, alu_src2};
-
-assign br_bus = {br_taken, br_target};
-
-assign {rf_we_WB, rf_waddr_WB, rf_wdata_WB} = ws_to_rf_bus;
-
-assign ds_ready_go = 1'b1;
-assign ds_to_es_valid = ds_valid && ds_ready_go;
-assign ds_allow_in = !ds_valid || ds_ready_go && es_allow_in; 
-
-always@(posedge clk)
-    if(rst)
-        ds_valid <= 0;
-    else if(ds_allow_in)
-        ds_valid <= fs_to_ds_valid;
-
-always@(posedge clk)
-    if(rst)
-        r_fs_to_ds_bus <= 0;
-    else if(fs_to_ds_valid && ds_allow_in)
-        r_fs_to_ds_bus <= fs_to_ds_bus;
-
-
 
 
 wire        inst_add_w;
@@ -250,5 +228,32 @@ assign alu_src1 = src1_is_pc  ? pc_ID : rj_value;
 assign alu_src2 = src2_is_imm ? imm : rkd_value_ID;
 
 
+
+assign {pc_ID, inst_ID} = r_fs_to_ds_bus;
+
+assign ds_to_es_bus = {rf_or_mem_ID, mem_we_ID, rf_we_ID, dest_ID, alu_op, pc_ID,  rkd_value_ID, alu_src1, alu_src2};
+
+assign br_bus = {br_taken, br_target};
+
+assign {rf_we_WB, rf_waddr_WB, rf_wdata_WB} = ws_to_rf_bus;
+
+assign ds_ready_go = 1'b1;
+assign ds_to_es_valid = ds_valid && ds_ready_go;
+assign ds_allow_in = !ds_valid || ds_ready_go && es_allow_in; 
+
+always@(posedge clk)
+    if(rst)
+        ds_valid <= 0;
+    else if(ds_allow_in)
+        ds_valid <= fs_to_ds_valid;
+
+always@(posedge clk)
+    if(rst)
+        r_fs_to_ds_bus <= 0;
+    else if(fs_to_ds_valid && ds_allow_in)
+        r_fs_to_ds_bus <= fs_to_ds_bus;
+
+
+assign ds_to_che_bus = {rj, rk, is_imm};
 
 endmodule
