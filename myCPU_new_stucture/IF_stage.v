@@ -10,6 +10,8 @@ module IF_stage(
     input [31:0] inst_sram_rdata,
 
     input IF_fresh,
+    //!见3.26.3
+    input stall,
 
     output  inst_sram_en,
     output [3:0] inst_sram_we,
@@ -72,7 +74,7 @@ end
 assign fs_to_ds_bus = !IF_fresh ? {pc_IF, inst_sram_rdata} : {pc_IF, 32'b0};
 
 assign inst_sram_we    = 4'b0;
-assign inst_sram_addr  = nextpc;
+assign inst_sram_addr  = stall ? pc_IF : nextpc;
 assign inst_sram_wdata = 32'b0;
 
 assign inst_sram_en = 1'b1;

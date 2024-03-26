@@ -14,7 +14,8 @@ module WB_stage(
     output wire [31:0] pc_WB,
     output wire [3:0] rf_we_out,
     output wire [4 : 0] dest_WB,
-    output wire [31:0] final_result_WB
+    output wire [31:0] final_result_WB,
+    output wire [`WS_TO_CHE_WD-1:0] ws_to_che_bus
 );
 
 reg [`MS_TO_WS_WD - 1: 0] r_ms_to_ws_bus;
@@ -40,6 +41,7 @@ assign ws_to_rf_valid = ws_ready_go && ws_valid;
 assign ws_allow_in = !ws_valid || ws_ready_go;
 
 assign ws_to_rf_bus = {rf_we_WB, dest_WB, final_result_WB};
+assign ws_to_che_bus = {rf_we_WB, dest_WB};
 assign rf_we_out = {4{rf_we_WB}};
 
 

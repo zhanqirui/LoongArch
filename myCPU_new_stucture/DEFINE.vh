@@ -11,3 +11,4 @@
 
 `define ES_TO_CHE_WD 6
 `define MS_TO_CHE_WD 6
+`define WS_TO_CHE_WD 6

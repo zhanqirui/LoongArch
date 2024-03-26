@@ -50,6 +50,7 @@ IF_stage U_IF_stage(
     .clk(clk),
     .reset(reset),
     .br_bus(br_bus),
+    .stall(stall),
     .ds_allow_in(ds_allow_in),
     .inst_sram_rdata(inst_sram_rdata),
     .IF_fresh(IF_fresh),
@@ -78,6 +79,7 @@ ID_stage u_ID_stage(
     .clk(clk),
     .valid(valid),
     .rst(reset),
+    .stall(stall),
     .fs_to_ds_bus(fs_to_ds_bus),
     .fs_to_ds_valid(fs_to_ds_valid),
     .ds_allow_in(ds_allow_in),
@@ -129,12 +131,13 @@ MEM_stage U_MEM_stage(
     .ms_to_che_bus(ms_to_che_bus)
 );
 
-
+wire [`WS_TO_CHE_WD-1:0] ws_to_che_bus;
 
 chector u_chector(
     .ds_to_che_bus(ds_to_che_bus),
     .es_to_che_bus(es_to_che_bus),
     .ms_to_che_bus(ms_to_che_bus),
+    .ws_to_che_bus(ws_to_che_bus),
 
     .is_stall(stall)
     
@@ -150,7 +153,8 @@ WB_stage U_WB_stage(
     .pc_WB(debug_wb_pc),
     .rf_we_out(debug_wb_rf_we),
     .dest_WB(debug_wb_rf_wnum),
-    .final_result_WB(debug_wb_rf_wdata)
+    .final_result_WB(debug_wb_rf_wdata),
+    .ws_to_che_bus(ws_to_che_bus)
 );
 
 // debug info generate

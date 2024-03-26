@@ -7,7 +7,7 @@ input clk, valid, rst,
 
 input [`FS_TO_DS_WD - 1 : 0] fs_to_ds_bus,
 input fs_to_ds_valid, 
-
+input stall,
 input es_allow_in,
 
 
@@ -74,7 +74,8 @@ wire        need_si16;
 wire        need_si20;
 wire        need_si26;
 wire        src2_is_4;
-
+//!见3.26.4
+wire [4:0] rj_to_che, rk_to_che;
 wire [ 4:0] rd;
 wire [4:0] rj;
 wire [4:0] rk;
@@ -153,9 +154,13 @@ assign is_imm = need_ui5 & need_si12 & need_si16 & need_si20 & need_si26;
 
 assign src2_is_4  =  inst_jirl | inst_bl;
 
+
 assign rd   = inst_ID[ 4: 0];
 assign rj   = inst_ID[ 9: 5];
 assign rk   = inst_ID[14:10];
+
+assign rj_to_che = rj;
+assign rk_to_che = (inst_beq | inst_bne) ? rd : rk;
 
 assign i12  = inst_ID[21:10];
 assign i20  = inst_ID[24: 5];
@@ -254,6 +259,6 @@ always@(posedge clk)
         r_fs_to_ds_bus <= fs_to_ds_bus;
 
 
-assign ds_to_che_bus = {rj, rk, is_imm};
+assign ds_to_che_bus = {is_imm, rj_to_che, rk_to_che};
 
 endmodule

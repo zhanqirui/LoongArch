@@ -2,7 +2,7 @@
 
 module EXE_stage(
     input clk, rst,
-
+    //?NEED?
     input stall,
     //上一级流水线给的信息
     input  ds_to_es_valid,
@@ -18,7 +18,6 @@ module EXE_stage(
     output [ 3:0] data_sram_we   ,
     output [31:0] data_sram_addr ,
     output [31:0] data_sram_wdata ,
-    //TODO新增es_to_che_bus
     output [`ES_TO_CHE_WD-1:0] es_to_che_bus
 );
 
@@ -33,7 +32,7 @@ wire [31:0] alu_result_EXE;
 wire [31:0] pc_EXE;
 
 always@(posedge clk)
-    if(rst)
+    if(rst || stall)
         r_ds_to_es_bus <= 0;
     else if(ds_to_es_valid && es_allow_in)
         r_ds_to_es_bus <= ds_to_es_bus;
@@ -43,9 +42,9 @@ assign {rf_or_mem_EXE, mem_en_EXE, rf_we_EXE, dest_EXE, alu_op_EXE, pc_EXE,  rkd
 reg es_valid;
 wire es_ready_go;
 
-assign es_ready_go = ~stall;
+assign es_ready_go = 1'b1;
 assign es_to_ms_valid = es_ready_go && es_valid;
-assign es_allow_in = !es_valid || es_ready_go && ms_allow_in;
+assign es_allow_in = (!es_valid || es_ready_go && ms_allow_in) & ~stall;
 
 always@(posedge clk)
     if(rst)
