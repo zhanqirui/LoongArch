@@ -1,4 +1,3 @@
-//一大堆的译码单元，将输入译为独热码
 module decoder_2_4(
     input  wire [ 1:0] in,
     output wire [ 3:0] out

@@ -1,164 +1,152 @@
-`include "DEFINE.vh"
+`include "mycpu.h"
+
 module mycpu_top(
-    input  wire        clk,
-    input  wire        resetn,      //low valid
+    input         clk,
+    input         resetn,
     // inst sram interface
-    output wire [3:0]  inst_sram_we,
-    output wire [31:0] inst_sram_addr,
-    output wire [31:0] inst_sram_wdata,
-    input  wire [31:0] inst_sram_rdata,
+    output        inst_sram_en,
+    output [ 3:0] inst_sram_we,
+    output [31:0] inst_sram_addr,
+    output [31:0] inst_sram_wdata,
+    input  [31:0] inst_sram_rdata,
     // data sram interface
-    output wire [3:0]  data_sram_we,
-    output wire [31:0] data_sram_addr,
-    output wire [31:0] data_sram_wdata,
-    input  wire [31:0] data_sram_rdata,
+    output        data_sram_en,
+    output [ 3:0] data_sram_we,
+    output [31:0] data_sram_addr,
+    output [31:0] data_sram_wdata,
+    input  [31:0] data_sram_rdata,
     // trace debug interface
-    output wire [31:0] debug_wb_pc,
-    output wire [ 3:0] debug_wb_rf_we,
-    output wire [ 4:0] debug_wb_rf_wnum,
-    output wire [31:0] debug_wb_rf_wdata,
-
-    output wire inst_sram_en,
-    output wire data_sram_en
+    output [31:0] debug_wb_pc,
+    output [ 3:0] debug_wb_rf_we,
+    output [ 4:0] debug_wb_rf_wnum,
+    output [31:0] debug_wb_rf_wdata
 );
-
-
-wire IF_fresh;
-wire stall;
-//reset和valid信号生成
 reg         reset;
-always @(posedge clk) 
-    reset <= ~resetn;
+always @(posedge clk) reset <= ~resetn;
 
-reg         valid;
-always @(posedge clk) begin
-    if (reset) begin
-        valid <= 1'b0;
-    end
-    else begin
-        valid <= 1'b1;
-    end
-end
+wire         ds_allowin;
+wire         es_allowin;
+wire         ms_allowin;
+wire         ws_allowin;
+wire         fs_to_ds_valid;
+wire         ds_to_es_valid;
+wire         es_to_ms_valid;
+wire         ms_to_ws_valid;
+wire  [4:0]       es_to_ds_dest;
+wire  [4:0]       ms_to_ds_dest;
+wire  [4:0]       ws_to_ds_dest;
+wire         es_to_ds_load_op;
+wire [31:0] es_to_ds_result;
+wire [31:0] ms_to_ds_result;
+wire [31:0] ws_to_ds_result;
+wire [`FS_TO_DS_BUS_WD -1:0] fs_to_ds_bus;
+wire [`DS_TO_ES_BUS_WD -1:0] ds_to_es_bus;
+wire [`ES_TO_MS_BUS_WD -1:0] es_to_ms_bus;
+wire [`MS_TO_WS_BUS_WD -1:0] ms_to_ws_bus;
+wire [`WS_TO_RF_BUS_WD -1:0] ws_to_rf_bus;
+wire [`BR_BUS_WD       -1:0] br_bus;
 
-wire [31:0] inst;
-wire ds_allow_in;
-wire [`FS_TO_DS_WD - 1 : 0] fs_to_ds_bus;
-wire [`BR_TO_FS_WD - 1 : 0] br_bus;
-wire fs_to_ds_valid;
-
-IF_stage U_IF_stage(
-    .clk(clk),
-    .reset(reset),
-    .br_bus(br_bus),
-    .stall(stall),
-    .ds_allow_in(ds_allow_in),
-    .inst_sram_rdata(inst_sram_rdata),
-    .IF_fresh(IF_fresh),
-
-    .inst_sram_en(inst_sram_en),
-    .inst_sram_we(inst_sram_we),
-
-    .inst_sram_addr(inst_sram_addr),
+// IF stage
+if_stage if_stage(
+    .clk            (clk            ),
+    .reset          (reset          ),
+    //allowin
+    .ds_allowin     (ds_allowin     ),
+    //brbus
+    .br_bus         (br_bus         ),
+    //outputs
+    .fs_to_ds_valid (fs_to_ds_valid ),
+    .fs_to_ds_bus   (fs_to_ds_bus   ),
+    // inst sram interface
+    .inst_sram_en   (inst_sram_en   ),
+    .inst_sram_we   (inst_sram_we  ),
+    .inst_sram_addr (inst_sram_addr ),
     .inst_sram_wdata(inst_sram_wdata),
-
-    .fs_to_ds_bus(fs_to_ds_bus),
-    .fs_to_ds_valid(fs_to_ds_valid)
-);        
-
-
-// output ds_to_es_valid,
-// output [`DS_TO_ES_WD - 1: 0] ds_to_es_bus,
-
-// output [`BR_TO_FS_WD - 1: 0] br_bus                                   
-wire es_allow_in;
-wire [`WS_TO_RF_WD-1:0] ws_to_rf_bus;
-wire ds_to_es_valid;
-wire [`DS_TO_ES_WD - 1: 0] ds_to_es_bus;
-wire [`DS_TO_CHE_WD-1:0] ds_to_che_bus;
-ID_stage u_ID_stage(
-    .clk(clk),
-    .valid(valid),
-    .rst(reset),
-    .stall(stall),
-    .fs_to_ds_bus(fs_to_ds_bus),
-    .fs_to_ds_valid(fs_to_ds_valid),
-    .ds_allow_in(ds_allow_in),
-    .es_allow_in(es_allow_in),
-    .ws_to_rf_bus(ws_to_rf_bus),
-    .IF_fresh(IF_fresh),
-    .ds_to_es_valid(ds_to_es_valid),
-    .ds_to_es_bus(ds_to_es_bus),
-    .br_bus(br_bus),
-    .ds_to_che_bus(ds_to_che_bus)
-   
+    .inst_sram_rdata(inst_sram_rdata)
 );
-
-
-//EXEstage
-wire ms_allow_in, es_to_ms_valid;
-wire [`ES_TO_MS_WD - 1: 0] es_to_ms_bus;
-wire [`ES_TO_CHE_WD-1:0] es_to_che_bus;
-EXE_stage U_EXE_srage(
-    .clk(clk),
-    .rst(reset),
-    .stall(stall),
-    .ds_to_es_valid(ds_to_es_valid),
-    .ds_to_es_bus(ds_to_es_bus),
-    .ms_allow_in(ms_allow_in),
-    .es_allow_in(es_allow_in),
-    .es_to_ms_valid(es_to_ms_valid),
-    .es_to_ms_bus(es_to_ms_bus),
-    .data_sram_we(data_sram_we),
-    .data_sram_addr(data_sram_addr),
-    .data_sram_wdata(data_sram_wdata),
-    .es_to_che_bus(es_to_che_bus)
+// ID stage
+id_stage id_stage(
+    .clk            (clk            ),
+    .reset          (reset          ),
+    //allowin
+    .es_allowin     (es_allowin     ),
+    .ds_allowin     (ds_allowin     ),
+    //from fs
+    .fs_to_ds_valid (fs_to_ds_valid ),
+    .fs_to_ds_bus   (fs_to_ds_bus   ),
+    //to es
+    .ds_to_es_valid (ds_to_es_valid ),
+    .ds_to_es_bus   (ds_to_es_bus   ),
+    .es_to_ds_dest  (es_to_ds_dest)  ,
+    .ms_to_ds_dest  (ms_to_ds_dest)  ,
+    .ws_to_ds_dest  (ws_to_ds_dest)  ,
+    .es_to_ds_load_op(es_to_ds_load_op),
+    .es_to_ds_result(es_to_ds_result),
+    .ms_to_ds_result(ms_to_ds_result),
+    .ws_to_ds_result(ws_to_ds_result),
+    //to fs
+    .br_bus         (br_bus         ),
+    //to rf: for write back
+    .ws_to_rf_bus   (ws_to_rf_bus   )
 );
-
-wire ws_allow_in;
-wire ms_to_ws_valid;
-wire [`MS_TO_WS_WD-1:0] ms_to_ws_bus;
-wire [`MS_TO_CHE_WD-1:0] ms_to_che_bus;
-MEM_stage U_MEM_stage(
-    .clk(clk),
-    .rst(reset),
-    .es_to_ms_valid(es_to_ms_valid),
-    .es_to_ms_bus(es_to_ms_bus),
-    .ws_allow_in(ws_allow_in),
-    .data_sram_rdata(data_sram_rdata),
-    .ms_allow_in(ms_allow_in),
-    .ms_to_ws_valid(ms_to_ws_valid),
-    .ms_to_ws_bus(ms_to_ws_bus),
-    .ms_to_che_bus(ms_to_che_bus)
+// EXE stage
+exe_stage exe_stage(
+    .clk            (clk            ),
+    .reset          (reset          ),
+    //allowin
+    .ms_allowin     (ms_allowin     ),
+    .es_allowin     (es_allowin     ),
+    .es_to_ds_dest  (es_to_ds_dest)  ,
+    //from ds
+    .ds_to_es_valid (ds_to_es_valid ),
+    .ds_to_es_bus   (ds_to_es_bus   ),
+    //to ms
+    .es_to_ms_valid (es_to_ms_valid ),
+    .es_to_ms_bus   (es_to_ms_bus   ),
+    .es_to_ds_load_op(es_to_ds_load_op),
+    .es_to_ds_result(es_to_ds_result),
+    // data sram interface
+    .data_sram_en   (data_sram_en   ),
+    .data_sram_we   (data_sram_we  ),
+    .data_sram_addr (data_sram_addr ),
+    .data_sram_wdata(data_sram_wdata)
 );
-
-wire [`WS_TO_CHE_WD-1:0] ws_to_che_bus;
-
-chector u_chector(
-    .ds_to_che_bus(ds_to_che_bus),
-    .es_to_che_bus(es_to_che_bus),
-    .ms_to_che_bus(ms_to_che_bus),
-    .ws_to_che_bus(ws_to_che_bus),
-
-    .is_stall(stall)
-    
+// MEM stage
+mem_stage mem_stage(
+    .clk            (clk            ),
+    .reset          (reset          ),
+    //allowin
+    .ws_allowin     (ws_allowin     ),
+    .ms_allowin     (ms_allowin     ),
+    .ms_to_ds_dest  (ms_to_ds_dest)  ,
+    .ms_to_ds_result(ms_to_ds_result),
+    //from es
+    .es_to_ms_valid (es_to_ms_valid ),
+    .es_to_ms_bus   (es_to_ms_bus   ),
+    //to ws
+    .ms_to_ws_valid (ms_to_ws_valid ),
+    .ms_to_ws_bus   (ms_to_ws_bus   ),
+    //from data-sram
+    .data_sram_rdata(data_sram_rdata)
 );
-
-WB_stage U_WB_stage(
-    .clk(clk),
-    .rst(reset),
-    .ms_to_ws_valid(ms_to_ws_valid),
-    .ms_to_ws_bus(ms_to_ws_bus),
-    .ws_allow_in(ws_allow_in),
-    .ws_to_rf_bus(ws_to_rf_bus),
-    .pc_WB(debug_wb_pc),
-    .rf_we_out(debug_wb_rf_we),
-    .dest_WB(debug_wb_rf_wnum),
-    .final_result_WB(debug_wb_rf_wdata),
-    .ws_to_che_bus(ws_to_che_bus)
+// WB stage
+wb_stage wb_stage(
+    .clk            (clk            ),
+    .reset          (reset          ),
+    //allowin
+    .ws_allowin     (ws_allowin     ),
+    //from ms
+    .ms_to_ws_valid (ms_to_ws_valid ),
+    .ms_to_ws_bus   (ms_to_ws_bus   ),
+    .ws_to_ds_dest  (ws_to_ds_dest)  ,
+    .ws_to_ds_result(ws_to_ds_result),
+    //to rf: for write back
+    .ws_to_rf_bus   (ws_to_rf_bus   ),
+    //trace debug interface
+    .debug_wb_pc      (debug_wb_pc      ),
+    .debug_wb_rf_we   (debug_wb_rf_we   ),
+    .debug_wb_rf_wnum (debug_wb_rf_wnum ),
+    .debug_wb_rf_wdata(debug_wb_rf_wdata)
 );
-
-// debug info generate
-
-assign data_sram_en = 1'b1;
 
 endmodule

@@ -1,25 +1,17 @@
 module regfile(
     input  wire        clk,
-    // READ PORT 1 相当于BUSA
+    // READ PORT 1
     input  wire [ 4:0] raddr1,
     output wire [31:0] rdata1,
-    // READ PORT 2 相当于BUSB
+    // READ PORT 2
     input  wire [ 4:0] raddr2,
     output wire [31:0] rdata2,
-    // WRITE PORT   相当于BUSW
+    // WRITE PORT
     input  wire        we,       //write enable, HIGH valid
     input  wire [ 4:0] waddr,
     input  wire [31:0] wdata
 );
 reg [31:0] rf[31:0];
-integer i;
-
-initial begin
-    for(i = 0; i <= 31;i = i + 1)begin
-        rf[i] = 32'b0;
-    end
-
-end
 
 //WRITE
 always @(posedge clk) begin

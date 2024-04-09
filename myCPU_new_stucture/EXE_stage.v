@@ -1,71 +1,129 @@
-`include "DEFINE.vh"
+`include "mycpu.h"
 
-module EXE_stage(
-    input clk, rst,
-    //?NEED?
-    input stall,
-    //上一级流水线给的信息
-    input  ds_to_es_valid,
-    input  [`DS_TO_ES_WD - 1 : 0] ds_to_es_bus,
-    //下一级流水线给的信息
-    input  ms_allow_in,
-
-    output es_allow_in,
-
-    output es_to_ms_valid,
-    output [`ES_TO_MS_WD - 1: 0] es_to_ms_bus,
-
+module exe_stage(
+    input                          clk           ,
+    input                          reset         ,
+    //allowin
+    input                          ms_allowin    ,
+    output                         es_allowin    ,
+    //from ds
+    input                          ds_to_es_valid,
+    input  [`DS_TO_ES_BUS_WD -1:0] ds_to_es_bus  ,
+    output        es_to_ds_load_op,
+    output [ 4:0] es_to_ds_dest,
+    output [31:0] es_to_ds_result,
+    //to ms
+    output                         es_to_ms_valid,
+    output [`ES_TO_MS_BUS_WD -1:0] es_to_ms_bus  ,
+    // data sram interface(write)
+    output        data_sram_en   ,
     output [ 3:0] data_sram_we   ,
     output [31:0] data_sram_addr ,
-    output [31:0] data_sram_wdata ,
-    output [`ES_TO_CHE_WD-1:0] es_to_che_bus
+    output [31:0] data_sram_wdata
 );
 
-reg [`DS_TO_ES_WD - 1 : 0] r_ds_to_es_bus;
-// ds_to_es_bus = {rf_or_mem_EXE, mem_we, rf_we_EXE, dest_EXE, alu_op_EXE,  rkd_value_EXE, alu_src1_EXE, alu_src2_EXE};
-wire rf_or_mem_EXE, mem_en_EXE, rf_we_EXE;
-wire [4:0] dest_EXE;
-wire [11:0] alu_op_EXE;
-wire [31:0] rkd_value_EXE, alu_src1_EXE, alu_src2_EXE;
+reg         es_valid      ;
+wire        es_ready_go   ;
 
-wire [31:0] alu_result_EXE;
-wire [31:0] pc_EXE;
+reg  [`DS_TO_ES_BUS_WD -1:0] ds_to_es_bus_r;
 
-always@(posedge clk)
-    if(rst || stall)
-        r_ds_to_es_bus <= 0;
-    else if(ds_to_es_valid && es_allow_in)
-        r_ds_to_es_bus <= ds_to_es_bus;
+wire [27:0] alu_op      ;
+wire [4:0]  es_load_op;
+wire [2:0]  es_st_op;
+wire        src1_is_pc;
+wire        src2_is_imm;
+wire        src2_is_4;
+wire        res_from_mem;
+wire        dst_is_r1;
+wire        gr_we;
+wire        es_mem_we;
+wire [4: 0] dest;
+wire [31:0] rj_value;
+wire [31:0] rkd_value;
+wire [31:0] imm;
+wire [31:0] es_pc;
 
-assign {rf_or_mem_EXE, mem_en_EXE, rf_we_EXE, dest_EXE, alu_op_EXE, pc_EXE,  rkd_value_EXE, alu_src1_EXE, alu_src2_EXE} = r_ds_to_es_bus;
 
-reg es_valid;
-wire es_ready_go;
+assign {alu_op,
+        es_load_op,
+        es_st_op,
+        src1_is_pc,
+        src2_is_imm,
+        src2_is_4,
+        gr_we,
+        es_mem_we,
+        dest,
+        imm,
+        rj_value,
+        rkd_value,
+        es_pc,
+        res_from_mem
+       } = ds_to_es_bus_r;
 
-assign es_ready_go = 1'b1;
-assign es_to_ms_valid = es_ready_go && es_valid;
-assign es_allow_in = (!es_valid || es_ready_go && ms_allow_in) & ~stall;
+wire [31:0] alu_src1   ;
+wire [31:0] alu_src2   ;
+wire [31:0] alu_result ;
+wire [31:0] st_data;
+wire [1:0] alu_1_0;
 
-always@(posedge clk)
-    if(rst)
-        es_valid <= 0;
-    else if(es_allow_in)
+assign es_to_ds_load_op=es_load_op[0] | es_load_op[1] | es_load_op[2] | es_load_op[3] | es_load_op[4];
+
+assign es_to_ds_dest = dest & {5{es_valid}}; 
+
+assign es_to_ds_result = alu_result;
+
+assign es_to_ms_bus = {
+                       es_load_op,    //75:71 5
+                       res_from_mem,  //70:70 1
+                       gr_we       ,  //69:69 1
+                       dest        ,  //68:64 5
+                       alu_result  ,  //63:32 32
+                       es_pc          //31:0  32
+                      };
+
+assign es_ready_go    = 1'b1;
+assign es_allowin     = !es_valid || es_ready_go && ms_allowin;
+assign es_to_ms_valid =  es_valid && es_ready_go;
+always @(posedge clk) begin
+    if (reset) begin
+        es_valid <= 1'b0;
+    end
+    else if (es_allowin) begin
         es_valid <= ds_to_es_valid;
+    end
 
+    if (ds_to_es_valid && es_allowin) begin
+        ds_to_es_bus_r <= ds_to_es_bus;
+    end
+end
+
+assign alu_src1 = src1_is_pc  ? es_pc  : rj_value;
+assign alu_src2 = src2_is_imm ? imm : rkd_value;
 
 alu u_alu(
-    .alu_op(alu_op_EXE),
-    .alu_src1(alu_src1_EXE),
-    .alu_src2(alu_src2_EXE),
-    .alu_result(alu_result_EXE)
-);
-// 1 + 1 + 5 + 5 + 5 + 32 + 32 = 71
-assign es_to_ms_bus = {rf_or_mem_EXE, rf_we_EXE, dest_EXE, pc_EXE, alu_result_EXE};
+    .alu_op     (alu_op    ),
+    .alu_src1   (alu_src1  ),
+    .alu_src2   (alu_src2  ),
+    .alu_result (alu_result)
+    );
 
-assign data_sram_we = {4{mem_en_EXE && es_valid}};
-assign data_sram_addr = alu_result_EXE;
-assign data_sram_wdata = rkd_value_EXE;
 
-assign es_to_che_bus = {rf_we_EXE, dest_EXE};
+assign st_data = es_st_op[2] ? {4{rkd_value[7:0]}} :
+                 es_st_op[1] ? {2{rkd_value[15:0]}}:
+                 rkd_value;
+assign alu_1_0 = alu_result[1:0];
+assign data_sram_en    = 1'b1;
+assign data_sram_we    = es_mem_we && es_valid ?
+                        (es_st_op[2] ? 
+                        (   alu_1_0 == 2'b00 ? 4'b0001 :
+                            alu_1_0 == 2'b01 ? 4'b0010 :
+                            alu_1_0 == 2'b10 ? 4'b0100 : 4'b1000): 
+                        es_st_op[1] ?
+                        (   alu_1_0[1] ? 4'b1100 : 4'b0011) : 4'b1111) : 4'b0000;
+
+
+assign data_sram_addr  = alu_result;
+assign data_sram_wdata = st_data;
+
 
 endmodule
