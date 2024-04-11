@@ -5,8 +5,11 @@ module wb_stage(
     input  wire                         reset         ,
     //allowin
     output wire                         ws_allowin    ,
+    // to ds
     output wire [ 4:0] ws_to_ds_dest,
     output wire [31:0] ws_to_ds_result,
+    //TODO 改CPUtop
+    output wire ws_to_ds_is_exc,
     //from ms
     input  wire                         ms_to_ws_valid,
     input  wire [`MS_TO_WS_BUS_WD -1:0]  ms_to_ws_bus  ,
@@ -21,20 +24,22 @@ module wb_stage(
 
 reg         ws_valid;
 wire        ws_ready_go;
-
+wire        ws_is_exc;
 reg [`MS_TO_WS_BUS_WD -1:0] ms_to_ws_bus_r;
 wire        ws_gr_we;
 wire [ 4:0] ws_dest;
 wire [31:0] ws_final_result;
 wire [31:0] ws_pc;
+
 assign {ws_gr_we       ,  //69:69
         ws_dest        ,  //68:64
         ws_final_result,  //63:32
-        ws_pc             //31:0
+        ws_pc,             //31:0
+        ws_is_exc
        } = ms_to_ws_bus_r;
 
 assign ws_to_ds_dest = ws_dest & {5{ws_valid}};
-
+assign ws_to_ds_is_exc = ws_is_exc & ws_valid;
 wire        rf_we;
 wire [4 :0] rf_waddr;
 wire [31:0] rf_wdata;

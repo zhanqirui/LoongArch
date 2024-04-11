@@ -6,8 +6,11 @@ module mem_stage(
     //allowin
     input                          ws_allowin    ,
     output                         ms_allowin    ,
+    // to ds
     output [ 4:0] ms_to_ds_dest,
     output [31:0] ms_to_ds_result,
+    //TODO 改CPUtop
+    output        ms_to_ds_is_exc,
     //from es
     input                          es_to_ms_valid,
     input  [`ES_TO_MS_BUS_WD -1:0] es_to_ms_bus  ,
@@ -30,6 +33,10 @@ wire [ 4:0] ms_dest;
 wire [31:0] ms_alu_result;
 wire [31:0] ms_pc;
 
+wire ms_res_from_csr;
+wire [31:0] ms_csr_rdata;
+wire        ms_is_exc;
+
 wire [31:0] mem_result;
 wire [31:0] ms_final_result;
 
@@ -41,13 +48,19 @@ assign {
         ms_gr_we       ,  //69:69
         ms_dest        ,  //68:64
         ms_alu_result  ,  //63:32
-        ms_pc             //31:0
+        ms_pc,            //31:0
+        ms_res_from_csr,
+        ms_csr_rdata,
+        ms_is_exc
        } = es_to_ms_bus_r;
+
+assign ms_to_ds_is_exc = ms_is_exc && ms_valid;
 
 assign ms_to_ws_bus = {ms_gr_we       ,  //69:69
                        ms_dest        ,  //68:64
                        ms_final_result,  //63:32
-                       ms_pc             //31:0
+                       ms_pc,            //31:0
+                       ms_is_exc
                       };
 
 assign ms_to_ds_result = ms_final_result;
@@ -84,6 +97,7 @@ assign mem_result   =  ({32{ms_load_op[0]}} & data_sram_rdata)
                     |  ({32{ms_load_op[3]}} & {{24{1'b0}},ld_b_result})
                     |  ({32{ms_load_op[4]}} & {{16{1'b0}},ld_h_result});
                     
-assign ms_final_result = ms_res_from_mem ? mem_result : ms_alu_result;
+assign ms_final_result = ms_res_from_mem ? mem_result : 
+                         ms_res_from_csr ? ms_csr_rdata : ms_alu_result;
 
 endmodule

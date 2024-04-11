@@ -1,5 +1,5 @@
 `include "mycpu.h"
-
+//TODO 增加EENTERY逻辑和ERA逻辑！
 module mycpu_top(
     input         clk,
     input         resetn,
@@ -28,23 +28,33 @@ wire         ds_allowin;
 wire         es_allowin;
 wire         ms_allowin;
 wire         ws_allowin;
+
 wire         fs_to_ds_valid;
 wire         ds_to_es_valid;
 wire         es_to_ms_valid;
 wire         ms_to_ws_valid;
+
 wire  [4:0]       es_to_ds_dest;
 wire  [4:0]       ms_to_ds_dest;
 wire  [4:0]       ws_to_ds_dest;
+
+wire es_to_ds_is_exc;
+wire ms_to_ds_is_exc;
+wire ws_to_ds_is_exc;
+
+
 wire         es_to_ds_load_op;
 wire [31:0] es_to_ds_result;
 wire [31:0] ms_to_ds_result;
 wire [31:0] ws_to_ds_result;
 wire [`FS_TO_DS_BUS_WD -1:0] fs_to_ds_bus;
 wire [`DS_TO_ES_BUS_WD -1:0] ds_to_es_bus;
+wire [`CSR_BUS_WD  -1:0] ds_to_fs_csr_bus;
 wire [`ES_TO_MS_BUS_WD -1:0] es_to_ms_bus;
 wire [`MS_TO_WS_BUS_WD -1:0] ms_to_ws_bus;
 wire [`WS_TO_RF_BUS_WD -1:0] ws_to_rf_bus;
 wire [`BR_BUS_WD       -1:0] br_bus;
+
 
 // IF stage
 if_stage if_stage(
@@ -52,6 +62,8 @@ if_stage if_stage(
     .reset          (reset          ),
     //allowin
     .ds_allowin     (ds_allowin     ),
+    //csr_bus
+    .ds_to_fs_csr_bus(ds_to_fs_csr_bus),
     //brbus
     .br_bus         (br_bus         ),
     //outputs
@@ -77,13 +89,23 @@ id_stage id_stage(
     //to es
     .ds_to_es_valid (ds_to_es_valid ),
     .ds_to_es_bus   (ds_to_es_bus   ),
+    //dest
     .es_to_ds_dest  (es_to_ds_dest)  ,
     .ms_to_ds_dest  (ms_to_ds_dest)  ,
     .ws_to_ds_dest  (ws_to_ds_dest)  ,
+    //load_op
     .es_to_ds_load_op(es_to_ds_load_op),
+    //result
     .es_to_ds_result(es_to_ds_result),
     .ms_to_ds_result(ms_to_ds_result),
     .ws_to_ds_result(ws_to_ds_result),
+    //is_exc
+    .es_to_ds_is_exc(es_to_ds_is_exc),
+    .ms_to_ds_is_exc(ms_to_ds_is_exc),
+    .ws_to_ds_is_exc(ws_to_ds_is_exc),
+
+    .ds_to_fs_csr_bus(ds_to_fs_csr_bus),
+
     //to fs
     .br_bus         (br_bus         ),
     //to rf: for write back
@@ -97,6 +119,8 @@ exe_stage exe_stage(
     .ms_allowin     (ms_allowin     ),
     .es_allowin     (es_allowin     ),
     .es_to_ds_dest  (es_to_ds_dest)  ,
+    //to ds
+    .es_to_ds_is_exc(es_to_ds_is_exc),
     //from ds
     .ds_to_es_valid (ds_to_es_valid ),
     .ds_to_es_bus   (ds_to_es_bus   ),
@@ -120,6 +144,8 @@ mem_stage mem_stage(
     .ms_allowin     (ms_allowin     ),
     .ms_to_ds_dest  (ms_to_ds_dest)  ,
     .ms_to_ds_result(ms_to_ds_result),
+    //to ds
+    .ms_to_ds_is_exc(ms_to_ds_is_exc),
     //from es
     .es_to_ms_valid (es_to_ms_valid ),
     .es_to_ms_bus   (es_to_ms_bus   ),
@@ -129,6 +155,7 @@ mem_stage mem_stage(
     //from data-sram
     .data_sram_rdata(data_sram_rdata)
 );
+
 // WB stage
 wb_stage wb_stage(
     .clk            (clk            ),
@@ -140,6 +167,8 @@ wb_stage wb_stage(
     .ms_to_ws_bus   (ms_to_ws_bus   ),
     .ws_to_ds_dest  (ws_to_ds_dest)  ,
     .ws_to_ds_result(ws_to_ds_result),
+    //to ds
+    .ws_to_ds_is_exc(ws_to_ds_is_exc),
     //to rf: for write back
     .ws_to_rf_bus   (ws_to_rf_bus   ),
     //trace debug interface

@@ -5,6 +5,8 @@ module if_stage(
     input                          reset          ,
     //allwoin
     input                          ds_allowin     ,
+    //csr_bus
+    input [`CSR_BUS_WD       -1:0] ds_to_fs_csr_bus,
     //brbus
     input  [`BR_BUS_WD       -1:0] br_bus         ,
     //to ds
@@ -28,7 +30,14 @@ wire [31:0] nextpc;
 
 wire         br_taken;
 wire [ 31:0] br_target;
+//!CSR
+wire is_exc;
+wire is_ret;
+wire [31:0] csr_era;
+wire [31:0] csr_eentry;
+
 assign {br_taken, br_target} = br_bus;
+assign {is_exc, is_ret, csr_era, csr_eentry} = ds_to_fs_csr_bus;
 
 wire [31:0] fs_inst;
 reg  [31:0] fs_pc;
@@ -40,7 +49,10 @@ assign fs_to_ds_bus = {fs_inst ,
 // Actually, the seq_pc is just a delay slot instruction
 // if we use inst pc, here need to -4, it's more troublesome
 assign seq_pc       = fs_pc + 3'h4;
-assign nextpc       = br_taken ? br_target : seq_pc; 
+assign nextpc       = br_taken ? br_target : 
+                      is_exc ? csr_eentry : 
+                      is_ret ? csr_era:
+                      seq_pc; 
 
 // IF stage
 assign fs_ready_go    = ~br_taken;   // if taken is valid, if stage block
@@ -49,7 +61,7 @@ always @(posedge clk) begin
     if (reset) begin
         fs_pc <= 32'h1bfffffc;     //trick: to make nextpc be 0x1c000000 during reset 
     end
-    else if (to_fs_valid && (fs_allowin || br_taken)) begin
+    else if (to_fs_valid && (fs_allowin || br_taken || is_exc || is_ret)) begin
         // if taken is valid, to skip the delay slot instruction, next_pc should be the instruction after the jump inst
         fs_pc <= nextpc;
     end
@@ -68,11 +80,11 @@ end
 
 wire   br_stall;
 wire   pre_if_ready_go;
-	assign {br_stall, br_taken, br_target} = br_bus;
-	// pre-IF stage
-	assign to_fs_valid  = ~reset && pre_if_ready_go;
-	assign pre_if_ready_go = ~br_stall;
-	// if taken is valid and if stage is block, get the instruction after the jump inst
+assign {br_stall, br_taken, br_target} = br_bus;
+// pre-IF stage
+assign to_fs_valid  = ~reset && pre_if_ready_go;
+assign pre_if_ready_go = ~br_stall | is_exc | is_ret;
+// if taken is valid and if stage is block, get the instruction after the jump inst
 	
 assign inst_sram_we   = 4'h0;
 assign inst_sram_addr  = nextpc;
