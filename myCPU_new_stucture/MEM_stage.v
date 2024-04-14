@@ -14,6 +14,9 @@ module mem_stage(
     //from es
     input                          es_to_ms_valid,
     input  [`ES_TO_MS_BUS_WD -1:0] es_to_ms_bus  ,
+    // from cnt
+    input [31:0]  cnt_value_h,
+    input [31:0]  cnt_value_l,
     //to ws
     output                         ms_to_ws_valid,
     output [`MS_TO_WS_BUS_WD -1:0] ms_to_ws_bus  ,
@@ -33,6 +36,10 @@ wire [ 4:0] ms_dest;
 wire [31:0] ms_alu_result;
 wire [31:0] ms_pc;
 
+wire need_cnt_l;
+wire need_cnt_h;
+wire need_cnt_id;
+
 wire ms_res_from_csr;
 wire [31:0] ms_csr_rdata;
 wire        ms_is_exc;
@@ -51,7 +58,10 @@ assign {
         ms_pc,            //31:0
         ms_res_from_csr,
         ms_csr_rdata,
-        ms_is_exc
+        ms_is_exc,
+        need_cnt_l,
+        need_cnt_h,
+        need_cnt_id
        } = es_to_ms_bus_r;
 
 assign ms_to_ds_is_exc = ms_is_exc && ms_valid;
@@ -96,8 +106,12 @@ assign mem_result   =  ({32{ms_load_op[0]}} & data_sram_rdata)
                     |  ({32{ms_load_op[2]}} & {{16{ld_h_result[15]}},ld_h_result})
                     |  ({32{ms_load_op[3]}} & {{24{1'b0}},ld_b_result})
                     |  ({32{ms_load_op[4]}} & {{16{1'b0}},ld_h_result});
-                    
-assign ms_final_result = ms_res_from_mem ? mem_result : 
-                         ms_res_from_csr ? ms_csr_rdata : ms_alu_result;
+
+
+assign ms_final_result = ms_res_from_mem ? mem_result   : 
+                         ms_res_from_csr ? ms_csr_rdata : 
+                         need_cnt_l      ? cnt_value_l  :
+                         need_cnt_h      ? cnt_value_h  :
+                         ms_alu_result;
 
 endmodule

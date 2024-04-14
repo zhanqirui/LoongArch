@@ -17,6 +17,10 @@ module id_stage(
     input   [31:0]  es_to_ds_result,
     input   [31:0]  ms_to_ds_result,
     input   [31:0]  ws_to_ds_result,
+
+    input   [31:0] es_pc,
+    input          ALE_exc,
+    input   [31:0] data_sram_addr,
     output                         ds_allowin    ,
     //from fs
     input                          fs_to_ds_valid,
@@ -56,13 +60,29 @@ wire        res_from_csr;//由于csrwr和csrxchg会将CSR的信息记录至rd中
 wire [31:0] csr_rdata;
 wire [31:0] csr_wdata;
 wire [14:0] syscall_code;
+wire [14:0] break_code;
+
 wire        is_ret;//记录是否需要返回
 wire        is_exc; //记录是否异常！
+
 wire [31:0] csr_era;
 wire [31:0] csr_eentry;
 wire        is_following_exc;
 wire [5:0]  Ecode;
 wire [8:0]  EsubCode;
+
+wire        ADEF_exc;
+wire        INE_exc;
+
+
+wire br_exc, era_exc;
+wire dest_is_rj;
+
+wire need_cnt_l;
+wire need_cnt_h;
+wire need_cnt_id;
+wire        need_interrupt;
+
 
 wire        src_reg_is_rd;
 wire [4: 0] dest;
@@ -78,6 +98,8 @@ wire [ 3:0] op_25_22;
 wire [ 1:0] op_21_20;
 wire [ 4:0] op_19_15;
 wire [ 4:0] op_9_5;
+wire [ 4:0] op_14_10;
+wire [ 4:0] op_4_0;
 wire [ 4:0] rd;
 wire [ 4:0] rj;
 wire [ 4:0] rk;
@@ -91,6 +113,8 @@ wire [15:0] op_25_22_d;
 wire [ 3:0] op_21_20_d;
 wire [31:0] op_19_15_d;
 wire [31:0] op_9_5_d;
+wire [31:0] op_4_0_d;
+wire [31:0] op_14_10_d;
 
 wire        inst_add_w;
 wire        inst_sub_w;
@@ -150,6 +174,12 @@ wire inst_csrxchg;
 wire inst_ertn;
 wire inst_syscall;
 
+//!exp13添加指令
+wire inst_break;
+wire inst_rdcntvl_w;
+wire inst_rdcntvh_w;
+wire inst_rdcntid;
+
 wire        need_ui5;
 wire        need_si12;
 wire        need_ui12;
@@ -173,7 +203,9 @@ assign op_31_26  = ds_inst[31:26];
 assign op_25_22  = ds_inst[25:22];
 assign op_21_20  = ds_inst[21:20];
 assign op_19_15  = ds_inst[19:15];
+assign op_14_10  = ds_inst[14:10];
 assign op_9_5    = ds_inst[9:5];
+assign op_4_0    = ds_inst[4:0];
 
 assign rd   = ds_inst[ 4: 0];
 assign rj   = ds_inst[ 9: 5];
@@ -189,6 +221,8 @@ decoder_6_64 u_dec0(.in(op_31_26 ), .out(op_31_26_d ));
 decoder_4_16 u_dec1(.in(op_25_22 ), .out(op_25_22_d ));
 decoder_2_4  u_dec2(.in(op_21_20 ), .out(op_21_20_d ));
 decoder_5_32 u_dec3(.in(op_19_15 ), .out(op_19_15_d ));
+decoder_5_32 u_dec5(.in(op_14_10), .out(op_14_10_d));
+decoder_5_32 u_dec6(.in(op_4_0), .out(op_4_0_d));
 decoder_5_32 u_dec4(.in(op_9_5 ), .out(op_9_5_d ));
 
 
@@ -252,7 +286,10 @@ assign inst_csrwr = op_31_26_d[6'h01] & op_9_5_d[5'h01];
 assign inst_csrxchg = op_31_26_d[6'h01] & ((!op_9_5_d[5'h00]) & (!op_9_5_d[5'h01]));
 assign inst_ertn = op_31_26_d[6'h01] & op_25_22_d[4'h09];
 assign inst_syscall = op_31_26_d[6'h00] & op_25_22_d[4'h0] & op_21_20_d[2'h2] & op_19_15_d[5'h16];
-
+assign inst_break = op_31_26_d[6'h00] & op_25_22_d[4'h0] & op_21_20_d[2'h2] & op_19_15_d[5'h14];
+assign inst_rdcntvl_w = op_31_26_d[6'h00] & op_25_22_d[4'h0] & op_21_20_d[2'h1] & op_19_15_d[5'h00] & op_14_10_d[5'h18] & op_9_5_d[5'h0];
+assign inst_rdcntvh_w = op_31_26_d[6'h00] & op_25_22_d[4'h0] & op_21_20_d[2'h1] & op_19_15_d[5'h00] & op_14_10_d[5'h19] & op_9_5_d[5'h0];
+assign inst_rdcntid   = op_31_26_d[6'h00] & op_25_22_d[4'h0] & op_21_20_d[2'h1] & op_19_15_d[5'h00] & op_14_10_d[5'h18] & op_4_0_d[5'h0];
 
 assign alu_op[ 0] = inst_add_w | inst_addi_w | inst_ld_w | inst_ld_b | inst_ld_h | inst_ld_bu | inst_ld_hu | inst_st_w | inst_st_b | inst_st_h
                     | inst_jirl | inst_bl;
@@ -335,28 +372,53 @@ assign src2_is_imm   = inst_slli_w |
 
 assign res_from_mem  = inst_ld_w | inst_ld_b | inst_ld_h | inst_ld_bu | inst_ld_hu;
 //!csr
-assign res_from_csr = inst_csrrd | inst_csrwr | inst_csrxchg;
+assign res_from_csr = inst_csrrd | inst_csrwr | inst_csrxchg | inst_rdcntid;
 
 assign csr_we[0] = inst_csrwr & ~is_following_exc;
 assign csr_we[1] = inst_csrxchg & ~is_following_exc;
 
 assign csr_wdata = rkd_value;
 
-assign is_exc = inst_syscall & ds_valid;
-assign is_ret = inst_ertn & ds_valid;
-assign is_following_exc = es_to_ds_is_exc | ms_to_ds_is_exc | ws_to_ds_is_exc;
+//!触发ADEF异常
+assign ADEF_exc = era_exc | br_exc;
 
-assign Ecode = inst_syscall ? 6'hb : 6'h0;
+//!触发INE异常
+assign INE_exc =  ~(inst_add_w | inst_sub_w | inst_slt | inst_sltu | inst_nor | inst_and | inst_or | inst_xor | inst_slli_w | inst_srli_w | 
+                  inst_srai_w | inst_addi_w | inst_ld_w | inst_st_w | inst_jirl | inst_b | inst_bl | inst_beq | inst_bne | inst_lu12i_w |
+                  inst_pcaddu | inst_slti | inst_sltui | inst_andi | inst_ori | inst_xori | inst_sllw | inst_sraw | inst_srlw | inst_div |
+                  inst_divu | inst_mulw | inst_mulhw | inst_mulhwu | inst_mod | inst_modu | inst_blt | inst_bge | inst_bltu | inst_bgeu | 
+                  inst_ld_b | inst_ld_h | inst_ld_bu | inst_ld_hu | inst_st_b | inst_st_h | inst_csrrd | inst_csrwr | inst_csrxchg | inst_ertn | 
+                  inst_syscall | inst_break | inst_rdcntid | inst_rdcntvh_w | inst_rdcntvl_w);
+
+//! 触发BRK异常
+assign is_exc = (inst_break | inst_syscall | ADEF_exc | INE_exc | ALE_exc |need_interrupt) & ds_valid;
+assign is_ret = inst_ertn & ds_valid;
+assign is_following_exc = es_to_ds_is_exc | ms_to_ds_is_exc | ws_to_ds_is_exc | ALE_exc;
+
+//! 记录异常信息
+assign Ecode = inst_syscall ? 6'hb :
+               inst_break   ? 6'hc : 
+               ADEF_exc     ? 6'h8 : 
+               INE_exc      ? 6'hd : 
+               ALE_exc      ? 6'h9 : 
+               6'h0;
 assign EsubCode = 9'h0;
 
 assign syscall_code = ds_inst[14:0];//?暂时不知到有什么用
+assign break_code = ds_inst[14:0];//?暂时不知到有什么用
+
 
 
 assign dst_is_r1     = inst_bl;
-
-assign gr_we         = ~inst_st_w & ~inst_st_b & ~inst_st_h & ~inst_beq & ~inst_bne & ~inst_b & ~inst_blt & ~inst_bge & ~inst_bltu & ~inst_bgeu & ~is_following_exc;
+//! 由于这个信号采用的是与非的形式，所以需要区别对待
+assign gr_we         = ~inst_st_w & ~inst_st_b & ~inst_st_h & ~inst_beq & ~inst_bne & ~inst_b & ~inst_blt & ~inst_bge & ~inst_bltu & ~inst_bgeu & ~INE_exc & ~is_following_exc;
 assign mem_we        = (inst_st_w | inst_st_b | inst_st_h) & ~is_following_exc;
-assign dest          = dst_is_r1 ? 5'd1 : rd;
+assign dest_is_rj    = inst_rdcntid;
+//!bne的dest不存在！！！！因为不写入数据
+assign dest          = dst_is_r1 ? 5'd1 : 
+                       dest_is_rj ? rj  :
+                       gr_we ? rd       
+                       : 5'd0;
 
 assign rf_raddr1 = rj;
 assign rf_raddr2 = src_reg_is_rd ? rd :rk;
@@ -408,7 +470,10 @@ assign ds_to_es_bus = {alu_op       ,   // 28
                        res_from_mem ,   // 1
                        res_from_csr ,   // 1
                        csr_rdata,       //32
-                       is_exc           //1
+                       is_exc,           //1
+                       need_cnt_l,
+                       need_cnt_h,
+                       need_cnt_id
                     };
 
 assign ds_to_fs_csr_bus = {ms_to_ds_is_exc,
@@ -435,11 +500,16 @@ wire rj_l_rd;
 wire rj_l_rd_u;
 
 
+assign need_cnt_h = inst_rdcntvh_w;
+assign need_cnt_l = inst_rdcntvl_w;
+assign need_cnt_id = inst_rdcntid;
+
+
 //! csr没有rj和rk, 实际上它的rd也不会触发流水线前递，因为不需要使用
 assign src_no_rj    = inst_b | inst_bl | inst_lu12i_w | inst_csrrd | inst_csrwr;
 assign src_no_rk    = inst_slli_w | inst_srli_w | inst_srai_w | inst_addi_w | inst_ld_w | inst_ld_b | inst_ld_h | inst_ld_bu | inst_ld_hu | inst_st_w | inst_st_b | inst_st_h | inst_jirl | 
                       inst_b | inst_bl | inst_beq | inst_bne | inst_blt | inst_bge | inst_bltu | inst_bgeu | inst_lu12i_w | inst_slti | inst_sltui| inst_andi |
-                      inst_ori| inst_xori | inst_csrrd | inst_csrwr | inst_csrxchg;
+                      inst_ori| inst_xori | inst_csrrd | inst_csrwr | inst_csrxchg | inst_rdcntvh_w | inst_rdcntvl_w | inst_rdcntid;
 //!别忘记！
 assign src_no_rd    = ~inst_st_b & ~inst_st_h & ~inst_st_w & ~inst_beq & ~inst_bne & ~inst_blt & ~inst_bge & ~inst_bltu & ~inst_bgeu & ~inst_csrwr & ~inst_csrxchg;
 
@@ -474,14 +544,14 @@ assign rj_l_rd = ($signed (rj_value) < $signed (rkd_value));
 
 
 
-assign br_target = (inst_beq | inst_bne | inst_bl | inst_b | inst_blt | inst_bge | inst_bltu | inst_bgeu) ? (ds_pc + br_offs) :
-                                                   /*inst_jirl*/ (rj_value + jirl_offs);
+assign br_target = (inst_beq | inst_bne | inst_bl | inst_b | inst_blt | inst_bge | inst_bltu | inst_bgeu) ? ((ds_pc + br_offs) & {32{ds_valid}}) :
+                                                   /*inst_jirl*/ ((rj_value + jirl_offs) & {32{ds_valid}});
 
 
 wire br_stall;//上条是跳转指令，下条是load指令，仅此而已
 wire load_stall;
 	// es is load and ds is jmp(taken)
-    //! 此处brtaken可以保证异常来临时，br_stall为0
+//! 此处br_taken可以保证异常传递到之后的流水级时，br_stall为0
 assign br_stall   = load_stall & br_taken & ds_valid;
 //!异常发生后，上报前的load指令不需要停顿
 assign load_stall = ~is_following_exc & es_to_ds_load_op & ( rj_wait |
@@ -502,6 +572,24 @@ assign br_taken = (   inst_beq  &&  rj_eq_rd
                    || inst_b
                 )  && ds_valid && ~load_stall && ~is_following_exc;
     
+
+assign br_exc = br_taken & (br_target[1:0] != 2'b0);
+assign era_exc = is_ret & (csr_era[1:0] != 2'b00);
+wire [31:0] pc_to_badv;
+wire [31:0] pc_to_era;
+wire Addr_exc;
+//?异常处理程序的地址不会错误吗？
+assign pc_to_era = br_exc ? br_target : 
+                   era_exc ? csr_era  :
+                   ALE_exc ? es_pc    :
+                   ds_pc;
+
+assign pc_to_badv =  br_exc ? br_target : 
+                     era_exc ? csr_era  :
+                     ALE_exc ? data_sram_addr :
+                     32'h0;
+
+assign Addr_exc = ADEF_exc | ALE_exc;
 csr u_csr(
     .clk(clk),
     .reset(reset),
@@ -510,13 +598,16 @@ csr u_csr(
     .ERA(csr_era),
     .EENTRY(csr_eentry),
     .rj_value(rj_value),
+    .need_interrupt(need_interrupt),
 
     .we(csr_we),
     .waddr(csr_num),
     .wdata(rkd_value),
-    .pc(ds_pc),
+    .pc_to_era(pc_to_era),
+    .pc_to_badv(pc_to_badv),
     .is_ret(is_ret),
     .is_exc(is_exc),
+    .Addr_exc(Addr_exc),
     .Ecode(Ecode),
     .EsubCode(EsubCode)
 

@@ -1,5 +1,5 @@
 `include "mycpu.h"
-//TODO 增加EENTERY逻辑和ERA逻辑！
+
 module mycpu_top(
     input         clk,
     input         resetn,
@@ -43,6 +43,10 @@ wire ms_to_ds_is_exc;
 wire ws_to_ds_is_exc;
 
 
+wire [31:0] cnt_value_l;
+wire [31:0] cnt_value_h;
+
+
 wire         es_to_ds_load_op;
 wire [31:0] es_to_ds_result;
 wire [31:0] ms_to_ds_result;
@@ -55,6 +59,19 @@ wire [`MS_TO_WS_BUS_WD -1:0] ms_to_ws_bus;
 wire [`WS_TO_RF_BUS_WD -1:0] ws_to_rf_bus;
 wire [`BR_BUS_WD       -1:0] br_bus;
 
+    // input clk,
+    // input reset,
+
+    // output [31:0] ID,
+    // output [31:0] cnt_value_l,
+    // output [31:0] cnt_value_h
+Scnt Scnt(
+    .clk(clk),
+    .reset(reset),
+
+    .cnt_value_l(cnt_value_l),
+    .cnt_value_h(cnt_value_h)
+);
 
 // IF stage
 if_stage if_stage(
@@ -76,6 +93,9 @@ if_stage if_stage(
     .inst_sram_wdata(inst_sram_wdata),
     .inst_sram_rdata(inst_sram_rdata)
 );
+wire ALE_exc;
+wire [31:0] es_pc;
+
 // ID stage
 id_stage id_stage(
     .clk            (clk            ),
@@ -99,11 +119,13 @@ id_stage id_stage(
     .es_to_ds_result(es_to_ds_result),
     .ms_to_ds_result(ms_to_ds_result),
     .ws_to_ds_result(ws_to_ds_result),
+    .data_sram_addr(data_sram_addr),
     //is_exc
     .es_to_ds_is_exc(es_to_ds_is_exc),
     .ms_to_ds_is_exc(ms_to_ds_is_exc),
     .ws_to_ds_is_exc(ws_to_ds_is_exc),
-
+    .ALE_exc(ALE_exc),
+    .es_pc(es_pc),
     .ds_to_fs_csr_bus(ds_to_fs_csr_bus),
 
     //to fs
@@ -111,6 +133,7 @@ id_stage id_stage(
     //to rf: for write back
     .ws_to_rf_bus   (ws_to_rf_bus   )
 );
+
 // EXE stage
 exe_stage exe_stage(
     .clk            (clk            ),
@@ -121,6 +144,8 @@ exe_stage exe_stage(
     .es_to_ds_dest  (es_to_ds_dest)  ,
     //to ds
     .es_to_ds_is_exc(es_to_ds_is_exc),
+    .es_pc(es_pc),
+    .ALE_exc(ALE_exc),
     //from ds
     .ds_to_es_valid (ds_to_es_valid ),
     .ds_to_es_bus   (ds_to_es_bus   ),
@@ -153,7 +178,10 @@ mem_stage mem_stage(
     .ms_to_ws_valid (ms_to_ws_valid ),
     .ms_to_ws_bus   (ms_to_ws_bus   ),
     //from data-sram
-    .data_sram_rdata(data_sram_rdata)
+    .data_sram_rdata(data_sram_rdata),
+    //from cnt
+    .cnt_value_l(cnt_value_l),
+    .cnt_value_h(cnt_value_h)
 );
 
 // WB stage

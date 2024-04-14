@@ -41,6 +41,7 @@ assign {is_exc, is_ret, csr_era, csr_eentry} = ds_to_fs_csr_bus;
 
 wire [31:0] fs_inst;
 reg  [31:0] fs_pc;
+wire inst_ertn;
 assign fs_to_ds_bus = {fs_inst ,
                        fs_pc   };
 
@@ -49,19 +50,20 @@ assign fs_to_ds_bus = {fs_inst ,
 // Actually, the seq_pc is just a delay slot instruction
 // if we use inst pc, here need to -4, it's more troublesome
 assign seq_pc       = fs_pc + 3'h4;
-assign nextpc       = br_taken ? br_target : 
-                      is_exc ? csr_eentry : 
-                      is_ret ? csr_era:
+assign nextpc       = (is_exc && csr_eentry[1:0] == 2'b00) ? csr_eentry :
+                      (br_taken && br_target[1:0] == 2'b00) ? br_target : 
+                      (is_ret && csr_era[1:0] == 2'b00) ? csr_era :
+                    //    inst_ertn ? fs_pc :
                       seq_pc; 
-
+assign inst_ertn = fs_inst == 32'h06483800;
 // IF stage
-assign fs_ready_go    = ~br_taken;   // if taken is valid, if stage block
+assign fs_ready_go    = ~br_taken && ~is_ret;   // if taken is valid, if stage block
 
 always @(posedge clk) begin
     if (reset) begin
         fs_pc <= 32'h1bfffffc;     //trick: to make nextpc be 0x1c000000 during reset 
     end
-    else if (to_fs_valid && (fs_allowin || br_taken || is_exc || is_ret)) begin
+    else if (to_fs_valid && (fs_allowin || br_taken || is_ret)) begin
         // if taken is valid, to skip the delay slot instruction, next_pc should be the instruction after the jump inst
         fs_pc <= nextpc;
     end
@@ -83,13 +85,13 @@ wire   pre_if_ready_go;
 assign {br_stall, br_taken, br_target} = br_bus;
 // pre-IF stage
 assign to_fs_valid  = ~reset && pre_if_ready_go;
-assign pre_if_ready_go = ~br_stall | is_exc | is_ret;
+assign pre_if_ready_go = ~br_stall;
 // if taken is valid and if stage is block, get the instruction after the jump inst
 	
 assign inst_sram_we   = 4'h0;
 assign inst_sram_addr  = nextpc;
 assign inst_sram_wdata = 32'b0;
-assign inst_sram_en    = to_fs_valid && (fs_allowin || br_taken) && pre_if_ready_go;
+assign inst_sram_en    = to_fs_valid && (fs_allowin || br_taken || is_ret) && pre_if_ready_go;
 
 assign fs_inst         = inst_sram_rdata;
 
