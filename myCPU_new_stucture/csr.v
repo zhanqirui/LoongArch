@@ -30,9 +30,9 @@ module csr(
 reg [31:0] CRMD, PRMD, ESTAT, SAVE1, SAVE2, SAVE3, SAVE0;
 reg [31:0] ECFG, BADV, TID, TCFG, TVAL, TICLR;
 
-wire  TCFG_En;
-wire TCFG_Periodic;
-wire [`N - 3 : 0] TCFG_InitVal;
+reg  TCFG_En;
+reg TCFG_Periodic;
+reg [`N - 3 : 0] TCFG_InitVal;
 
 wire [`N - 1: 0] TVAL_TimeVal;
 reg  last_is_TVAL_zero;
@@ -54,8 +54,10 @@ wire [12:0] int_vec;
 
 // 0 和 1
 always@(posedge clk) begin
-    if(reset)
+    if(reset)begin
         CRMD <= 32'h00000008;//初始化要求！
+        PRMD <= 32'h00000000;
+    end
     else if(is_exc) begin
         //PPLV = PLV
         PRMD[1:0] <= CRMD[1:0];
@@ -117,13 +119,13 @@ assign ESTAT_IS_9_2 = 8'h0;
 assign ESTAT_IS_11 = IS11;
 assign ESTAT_IS_12 = 1'b0;
 
-always@(TICLR_CLR, we, waddr)
+always@(TICLR_CLR, we, waddr, is_ret)
     if(TICLR_CLR)
         is_clr = 1'b1;
-    else if(is_ret || ((we[0] || we[1]) && waddr == 14'h41))
+    else if((is_ret || ((we[0] || we[1]) && waddr == 14'h41)))
         is_clr = 1'b0;
 
-always@(TICLR_CLR, is_TVAL_zero, last_is_TVAL_zero)
+always@(TICLR_CLR, is_TVAL_zero, last_is_TVAL_zero, is_clr)
     if(TICLR_CLR)
         IS11 = 1'b0;
     else if(is_TVAL_zero)begin
@@ -214,36 +216,67 @@ always@(posedge clk)
     else if(we[1] && waddr == 14'h40)
         TID <= TID & ~rj_value | wdata & rj_value;
 
-// 41
+// 41、42
 always@(posedge clk)
-    if(reset)
-        TCFG <= 32'h00000000;
-    else if(we[0] && waddr == 14'h41)
-        TCFG <= wdata;
-    else if(we[1] && waddr == 14'h41)
-        TCFG <= TCFG & ~rj_value | wdata & rj_value;
+    if(reset)begin
+        TCFG = 32'h00000000;
+        TVAL = 32'h00000000;
+    end
+    else if(we[0] && waddr == 14'h41)begin
+        TCFG = wdata;
+        TCFG_En = TCFG[0];
+        TCFG_Periodic = TCFG[1];
+        TCFG_InitVal = TCFG[`N - 1 : 2];
+        TVAL[`N - 1 : 0] = {TCFG_InitVal, 2'b0};
+    end
+    else if(we[1] && waddr == 14'h41)begin
+        TCFG = TCFG & ~rj_value | wdata & rj_value;
+        TCFG_En = TCFG[0];
+        TCFG_Periodic = TCFG[1];
+        TCFG_InitVal = TCFG[`N - 1 : 2];
+        TVAL[`N - 1 : 0] = {TCFG_InitVal, 2'b0};
+    end
 
-assign  TCFG_En = TCFG[0];
-assign TCFG_Periodic = TCFG[1];
-assign TCFG_InitVal = TCFG[`N - 1 : 2];
-
-// 42 
-always@(posedge clk)
-    if(reset)
-        TVAL <= 32'h00000000;
     else if(TCFG_En) begin
         if(TCFG_Periodic)begin
             if(TVAL[`N - 1 : 0] == 0)
-                TVAL[`N - 1 : 0] <= {TCFG_InitVal, 2'b0};
+                TVAL[`N - 1 : 0] = {TCFG_InitVal, 2'b0};
             else
-                TVAL[`N - 1 : 0] <= TVAL[`N - 1 : 0] - 1;
+                TVAL[`N - 1 : 0] = TVAL[`N - 1 : 0] - 1;
         end
         else begin
             if(TVAL[`N - 1 : 0] != 0)
                 TVAL[`N - 1 : 0] <= TVAL[`N - 1 : 0] - 1;
-        end
-            
+            else
+                TCFG_En = 0;
+         end
     end
+
+ 
+// assign  TCFG_En = TCFG[0];
+// assign TCFG_Periodic = TCFG[1];
+// assign TCFG_InitVal = TCFG[`N - 1 : 2];
+
+
+// // 42 
+// always@(posedge clk)
+//     if(reset)
+//         TVAL <= 32'h00000000;
+//     else if(TCFG_En) begin
+//         if(TCFG_Periodic)begin
+//             if(TVAL[`N - 1 : 0] == 0)
+//                 TVAL[`N - 1 : 0] <= {TCFG_InitVal, 2'b0};
+//             else
+//                 TVAL[`N - 1 : 0] <= TVAL[`N - 1 : 0] - 1;
+//         end
+//         else begin
+//             if(TVAL[`N - 1 : 0] != 0)
+//                 TVAL[`N - 1 : 0] <= TVAL[`N - 1 : 0] - 1;
+//             else
+//                 TVAL[`N - 1 : 0] <= {TCFG_InitVal, 2'b0};
+//         end
+            
+//     end
 
 always@(posedge clk)
     if(reset)

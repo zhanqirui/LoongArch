@@ -13,7 +13,7 @@ module id_stage(
     input           es_to_ds_is_exc,
     input           ms_to_ds_is_exc,
     input           ws_to_ds_is_exc,
-
+    input   [`MS_TO_DS_EXBUS_WD - 1 : 0] ms_to_ds_exbus,
     input   [31:0]  es_to_ds_result,
     input   [31:0]  ms_to_ds_result,
     input   [31:0]  ws_to_ds_result,
@@ -54,6 +54,14 @@ wire        dst_is_r1;
 wire        gr_we;
 wire        mem_we;
 // !csr
+wire [1:0]  ws_csr_we;
+wire [13:0] ws_csr_num;
+wire [31:0] ws_rj_value;
+
+wire [31:0] pc_to_badv;
+wire [31:0] pc_to_era;
+wire Addr_exc;
+
 wire [1:0]  csr_we;//CSR写使能信号
 wire [13:0] csr_num;//CSR寄存器编号
 wire        res_from_csr;//由于csrwr和csrxchg会将CSR的信息记录至rd中，所以在流水线中，需要有一个这个选择exe阶段写回id阶段的数据
@@ -73,6 +81,12 @@ wire [8:0]  EsubCode;
 
 wire        ADEF_exc;
 wire        INE_exc;
+
+wire  [31:0] fms_pc_to_era;
+wire  [31:0] fms_pc_to_badv;
+wire  fms_Addr_exc;
+wire  [5:0] fms_Ecode;
+wire  [8:0] fms_EsubCode;
 
 
 wire br_exc, era_exc;
@@ -212,6 +226,7 @@ assign rj   = ds_inst[ 9: 5];
 assign rk   = ds_inst[14:10];
 assign csr_num = inst_rdcntid ? 14'h40 : ds_inst[23 : 10];
 
+
 assign i12  = ds_inst[21:10];
 assign i20  = ds_inst[24: 5];
 assign i16  = ds_inst[25:10];
@@ -293,6 +308,7 @@ assign inst_rdcntid   = op_31_26_d[6'h00] & op_25_22_d[4'h0] & op_21_20_d[2'h0] 
 
 assign alu_op[ 0] = inst_add_w | inst_addi_w | inst_ld_w | inst_ld_b | inst_ld_h | inst_ld_bu | inst_ld_hu | inst_st_w | inst_st_b | inst_st_h
                     | inst_jirl | inst_bl;
+                    
 assign alu_op[ 1] = inst_sub_w;
 assign alu_op[ 2] = inst_slt;
 assign alu_op[ 3] = inst_sltu;
@@ -374,8 +390,8 @@ assign res_from_mem  = inst_ld_w | inst_ld_b | inst_ld_h | inst_ld_bu | inst_ld_
 //!csr
 assign res_from_csr = inst_csrrd | inst_csrwr | inst_csrxchg | inst_rdcntid;
 
-assign csr_we[0] = inst_csrwr & ~is_following_exc;
-assign csr_we[1] = inst_csrxchg & ~is_following_exc;
+assign csr_we[0] = inst_csrwr & ~is_following_exc & ds_valid;
+assign csr_we[1] = inst_csrxchg & ~is_following_exc & ds_valid;
 
 assign csr_wdata = rkd_value;
 
@@ -391,7 +407,7 @@ assign INE_exc =  ~(inst_add_w | inst_sub_w | inst_slt | inst_sltu | inst_nor | 
                   inst_syscall | inst_break | inst_rdcntid | inst_rdcntvh_w | inst_rdcntvl_w);
 
 //! 触发BRK异常
-assign is_exc = (inst_break | inst_syscall | ADEF_exc | INE_exc | ALE_exc |need_interrupt) & ds_valid;
+assign is_exc = ((inst_break | inst_syscall | ADEF_exc | INE_exc | need_interrupt) & ds_valid) | ALE_exc;
 assign is_ret = inst_ertn & ds_valid;
 assign is_following_exc = es_to_ds_is_exc | ms_to_ds_is_exc | ws_to_ds_is_exc | ALE_exc;
 
@@ -411,7 +427,7 @@ assign break_code = ds_inst[14:0];//?暂时不知到有什么用
 
 assign dst_is_r1     = inst_bl;
 //! 由于这个信号采用的是与非的形式，所以需要区别对待
-assign gr_we         = ~inst_st_w & ~inst_st_b & ~inst_st_h & ~inst_beq & ~inst_bne & ~inst_b & ~inst_blt & ~inst_bge & ~inst_bltu & ~inst_bgeu & ~INE_exc & ~is_following_exc;
+assign gr_we         = (~inst_st_w & ~inst_st_b & ~inst_st_h & ~inst_beq & ~inst_bne & ~inst_b & ~inst_blt & ~inst_bge & ~inst_bltu & ~inst_bgeu & ~INE_exc & ~is_following_exc & ~inst_ertn) & ds_valid;
 assign mem_we        = (inst_st_w | inst_st_b | inst_st_h) & ~is_following_exc;
 assign dest_is_rj    = inst_rdcntid;
 //!bne的dest不存在！！！！因为不写入数据
@@ -442,6 +458,15 @@ assign {rf_we   ,  //37:37
         rf_waddr,  //36:32
         rf_wdata   //31:0
        } = ws_to_rf_bus;
+       
+assign {
+        fms_pc_to_era,
+        fms_pc_to_badv,
+        fms_Addr_exc,
+        fms_Ecode,
+        fms_EsubCode
+
+} = ms_to_ds_exbus;
 
 assign load_op[0] = inst_ld_w;
 assign load_op[1] = inst_ld_b;
@@ -473,10 +498,24 @@ assign ds_to_es_bus = {alu_op       ,   // 28
                        is_exc,           //1
                        need_cnt_l,
                        need_cnt_h,
-                       need_cnt_id
+                       need_cnt_id,
+                       pc_to_era,
+                       pc_to_badv,
+                       Addr_exc,
+                       Ecode,
+                       EsubCode
                     };
 
-assign ds_to_fs_csr_bus = {ms_to_ds_is_exc,
+    //                     .pc_to_era(pc_to_era),
+    // .pc_to_badv(pc_to_badv),
+    //     .Addr_exc(Addr_exc),
+    // .Ecode(Ecode),
+    // .EsubCode(EsubCode)
+//csr_we, csr_num, rkd_value
+// 1 + 1 + 1 + 64 = 67
+assign ds_to_fs_csr_bus = {
+                  is_exc,
+                  ms_to_ds_is_exc,
                   is_ret,
                   csr_era, 
                   csr_eentry
@@ -575,9 +614,7 @@ assign br_taken = (   inst_beq  &&  rj_eq_rd
 
 assign br_exc = br_taken & (br_target[1:0] != 2'b0);
 assign era_exc = is_ret & (csr_era[1:0] != 2'b00);
-wire [31:0] pc_to_badv;
-wire [31:0] pc_to_era;
-wire Addr_exc;
+
 //?异常处理程序的地址不会错误吗？
 assign pc_to_era = br_exc ? br_target : 
                    era_exc ? csr_era  :
@@ -602,17 +639,18 @@ csr u_csr(
 
     .we(csr_we),
     .waddr(csr_num),
-    .wdata(rkd_value),
-    .pc_to_era(pc_to_era),
-    .pc_to_badv(pc_to_badv),
+    .wdata(csr_wdata),
+    .pc_to_era(fms_pc_to_era),
+    .pc_to_badv(fms_pc_to_badv),
     .is_ret(is_ret),
-    .is_exc(is_exc),
-    .Addr_exc(Addr_exc),
-    .Ecode(Ecode),
-    .EsubCode(EsubCode)
+    .is_exc(ms_to_ds_is_exc),
+    .Addr_exc(fms_Addr_exc),
+    .Ecode(fms_Ecode),
+    .EsubCode(fms_EsubCode)
 
 );
 
+// csr_we, csr_num, rkd_value
 assign ds_ready_go    = ds_valid & ~load_stall;
 assign ds_allowin     = !ds_valid || (ds_ready_go && es_allowin);//本身无效或者传递给下一个阶段
 assign ds_to_es_valid = ds_valid && ds_ready_go;
@@ -623,11 +661,13 @@ always @(posedge clk) begin
     else if (ds_allowin) begin
         ds_valid <= fs_to_ds_valid;
     end
-
-    if (fs_to_ds_valid && ds_allowin) begin
-        fs_to_ds_bus_r <= fs_to_ds_bus;
-    end
 end
 
+always@(posedge clk)
+    if(reset)
+        fs_to_ds_bus_r <= 0;
+    else if (fs_to_ds_valid && ds_allowin) begin
+        fs_to_ds_bus_r <= fs_to_ds_bus;
+    end
 
 endmodule

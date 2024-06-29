@@ -1,19 +1,56 @@
 `include "mycpu.h"
 
+
+
+// mycpu_top cpu(
+
+
+
+
+//     .inst_sram_req    (cpu_inst_req    ), o  
+//     .inst_sram_wr     (cpu_inst_wr     ), o
+//     .inst_sram_size   (cpu_inst_size   ), o
+//     .inst_sram_wstrb  (cpu_inst_wstrb  ), o
+//     .inst_sram_addr   (cpu_inst_addr   ), o
+//     .inst_sram_wdata  (cpu_inst_wdata  ), o
+//     .inst_sram_addr_ok(cpu_inst_addr_ok), i
+//     .inst_sram_data_ok(cpu_inst_data_ok), i
+//     .inst_sram_rdata  (cpu_inst_rdata  ), i
+    
+//     .data_sram_req    (cpu_data_req    ), o
+//     .data_sram_wr     (cpu_data_wr     ), o
+//     .data_sram_size   (cpu_data_size   ), o
+//     .data_sram_wstrb  (cpu_data_wstrb  ), o
+//     .data_sram_addr   (cpu_data_addr   ), o
+//     .data_sram_wdata  (cpu_data_wdata  ), o
+//     .data_sram_addr_ok(cpu_data_addr_ok), i
+//     .data_sram_data_ok(cpu_data_data_ok), i
+//     .data_sram_rdata  (cpu_data_rdata  ), i
+
+// );
+
 module mycpu_top(
     input         clk,
     input         resetn,
     // inst sram interface
-    output        inst_sram_en,
-    output [ 3:0] inst_sram_we,
+    output        inst_sram_req,
+    output        inst_sram_wr,
+    output [ 1:0] inst_sram_size,
+    output [ 3:0] inst_sram_wstrb,
     output [31:0] inst_sram_addr,
     output [31:0] inst_sram_wdata,
+    input         inst_sram_addr_ok,
+    input         inst_sram_data_ok,
     input  [31:0] inst_sram_rdata,
     // data sram interface
-    output        data_sram_en,
-    output [ 3:0] data_sram_we,
+    output        data_sram_req,
+    output        data_sram_wr,
+    output [ 1:0] data_sram_size,
+    output [ 3:0] data_sram_wstrb,
     output [31:0] data_sram_addr,
     output [31:0] data_sram_wdata,
+    input         data_sram_addr_ok,
+    input         data_sram_data_ok,
     input  [31:0] data_sram_rdata,
     // trace debug interface
     output [31:0] debug_wb_pc,
@@ -58,13 +95,8 @@ wire [`ES_TO_MS_BUS_WD -1:0] es_to_ms_bus;
 wire [`MS_TO_WS_BUS_WD -1:0] ms_to_ws_bus;
 wire [`WS_TO_RF_BUS_WD -1:0] ws_to_rf_bus;
 wire [`BR_BUS_WD       -1:0] br_bus;
+wire [`MS_TO_DS_EXBUS_WD - 1: 0] ms_to_ds_exbus;
 
-    // input clk,
-    // input reset,
-
-    // output [31:0] ID,
-    // output [31:0] cnt_value_l,
-    // output [31:0] cnt_value_h
 Scnt Scnt(
     .clk(clk),
     .reset(reset),
@@ -79,6 +111,10 @@ if_stage if_stage(
     .reset          (reset          ),
     //allowin
     .ds_allowin     (ds_allowin     ),
+
+    .inst_sram_addr_ok(inst_sram_addr_ok),
+    .inst_sram_data_ok(inst_sram_data_ok),
+    .inst_sram_wr(inst_sram_wr),
     //csr_bus
     .ds_to_fs_csr_bus(ds_to_fs_csr_bus),
     //brbus
@@ -87,8 +123,9 @@ if_stage if_stage(
     .fs_to_ds_valid (fs_to_ds_valid ),
     .fs_to_ds_bus   (fs_to_ds_bus   ),
     // inst sram interface
-    .inst_sram_en   (inst_sram_en   ),
-    .inst_sram_we   (inst_sram_we  ),
+    .inst_sram_req   (inst_sram_req ),
+    .inst_sram_size  (inst_sram_size),
+    .inst_sram_wstrb   (inst_sram_wstrb ),
     .inst_sram_addr (inst_sram_addr ),
     .inst_sram_wdata(inst_sram_wdata),
     .inst_sram_rdata(inst_sram_rdata)
@@ -127,7 +164,7 @@ id_stage id_stage(
     .ALE_exc(ALE_exc),
     .es_pc(es_pc),
     .ds_to_fs_csr_bus(ds_to_fs_csr_bus),
-
+    .ms_to_ds_exbus(ms_to_ds_exbus),
     //to fs
     .br_bus         (br_bus         ),
     //to rf: for write back
@@ -154,11 +191,15 @@ exe_stage exe_stage(
     .es_to_ms_bus   (es_to_ms_bus   ),
     .es_to_ds_load_op(es_to_ds_load_op),
     .es_to_ds_result(es_to_ds_result),
+    .data_sram_addr_ok(data_sram_addr_ok),
     // data sram interface
-    .data_sram_en   (data_sram_en   ),
-    .data_sram_we   (data_sram_we  ),
+    .data_sram_req   (data_sram_req   ),
+    .data_sram_wr   (data_sram_wr),
+    .data_sram_size (data_sram_size),
+    .data_sram_wstrb   (data_sram_wstrb  ),
     .data_sram_addr (data_sram_addr ),
-    .data_sram_wdata(data_sram_wdata)
+    .data_sram_wdata(data_sram_wdata),
+    .data_sram_data_ok(data_sram_data_ok)
 );
 // MEM stage
 mem_stage mem_stage(
@@ -171,6 +212,7 @@ mem_stage mem_stage(
     .ms_to_ds_result(ms_to_ds_result),
     //to ds
     .ms_to_ds_is_exc(ms_to_ds_is_exc),
+    .ms_to_ds_exbus(ms_to_ds_exbus),
     //from es
     .es_to_ms_valid (es_to_ms_valid ),
     .es_to_ms_bus   (es_to_ms_bus   ),
@@ -178,6 +220,7 @@ mem_stage mem_stage(
     .ms_to_ws_valid (ms_to_ws_valid ),
     .ms_to_ws_bus   (ms_to_ws_bus   ),
     //from data-sram
+    .data_sram_data_ok(data_sram_data_ok),
     .data_sram_rdata(data_sram_rdata),
     //from cnt
     .cnt_value_l(cnt_value_l),

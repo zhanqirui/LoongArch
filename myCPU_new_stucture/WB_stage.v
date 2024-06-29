@@ -30,6 +30,10 @@ wire        ws_gr_we;
 wire [ 4:0] ws_dest;
 wire [31:0] ws_final_result;
 wire [31:0] ws_pc;
+wire [13:0] ws_csr_num;
+wire [1:0]  ws_csr_we;
+wire [31:0] ws_rkd_value;
+wire [31:0] ws_rj_value;
 
 assign {ws_gr_we       ,  //69:69
         ws_dest        ,  //68:64
@@ -59,11 +63,13 @@ always @(posedge clk) begin
     else if (ws_allowin) begin
         ws_valid <= ms_to_ws_valid;
     end
-
-    if (ms_to_ws_valid && ws_allowin) begin
+end
+always@(posedge clk)
+    if(reset)
+        ms_to_ws_bus_r <= 0;
+    else  if (ms_to_ws_valid && ws_allowin) begin
         ms_to_ws_bus_r <= ms_to_ws_bus;
     end
-end
 
 assign rf_we    = ws_gr_we && ws_valid;
 assign rf_waddr = ws_dest;
@@ -71,7 +77,7 @@ assign rf_wdata = ws_final_result;
 
 // debug info generate
 assign debug_wb_pc       = ws_pc;
-assign debug_wb_rf_we    = {4{rf_we}};
+assign debug_wb_rf_we    = {4{rf_we & ws_valid}};
 assign debug_wb_rf_wnum  = ws_dest;
 assign debug_wb_rf_wdata = ws_final_result;
 
