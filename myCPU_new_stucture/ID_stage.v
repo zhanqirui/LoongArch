@@ -428,7 +428,7 @@ assign break_code = ds_inst[14:0];//?暂时不知到有什么用
 assign dst_is_r1     = inst_bl;
 //! 由于这个信号采用的是与非的形式，所以需要区别对待
 assign gr_we         = (~inst_st_w & ~inst_st_b & ~inst_st_h & ~inst_beq & ~inst_bne & ~inst_b & ~inst_blt & ~inst_bge & ~inst_bltu & ~inst_bgeu & ~INE_exc & ~is_following_exc & ~inst_ertn) & ds_valid;
-assign mem_we        = (inst_st_w | inst_st_b | inst_st_h) & ~is_following_exc;
+assign mem_we        = (inst_st_w | inst_st_b | inst_st_h) & ~is_following_exc & ds_valid;
 assign dest_is_rj    = inst_rdcntid;
 //!bne的dest不存在！！！！因为不写入数据
 assign dest          = dst_is_r1 ? 5'd1 : 

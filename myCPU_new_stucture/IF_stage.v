@@ -122,8 +122,8 @@ assign pre_if_ready_go = inst_sram_req & inst_sram_addr_ok & ~is_exc;
 
 // IF stage
 // assign fs_ready_go    = (~br_taken && ~is_ret && inst_sram_data_ok && ~ab_inst_valid) || inst_reg_valid;   // if taken is valid, if stage block
-assign fs_ready_go = (inst_sram_data_ok & ~br_taken) | inst_reg_valid;
-assign fs_allowin     = !fs_valid || (fs_ready_go && ds_allowin);    // 可接收数据（不阻塞
+assign fs_ready_go = (inst_sram_data_ok & ~br_taken & ~ab_inst_valid) | inst_reg_valid;
+assign fs_allowin     = !fs_valid || (fs_ready_go && ds_allowin) || is_exc;    // 可接收数据（不阻塞
 assign fs_to_ds_valid =  fs_valid && fs_ready_go;   
 always @(posedge clk) begin
     if (reset) begin
@@ -182,7 +182,7 @@ end
 always@(posedge clk)
     if(reset)
         ab_inst_valid <= 1'b0;
-    else if(ms_is_exc && (to_fs_valid || (fs_allowin == 1'b0 && fs_ready_go == 1'b0)))
+    else if(is_exc && (to_fs_valid || (fs_allowin == 1'b0 && fs_ready_go == 1'b0)))
         ab_inst_valid <= 1'b1;
     else if(inst_sram_data_ok)
         ab_inst_valid <= 1'b0;
