@@ -20,6 +20,7 @@ module id_stage(
 
     input   [31:0] es_pc,
     input          ALE_exc,
+    input          invtlb_op_exc,
     input   [31:0] data_sram_addr,
     output                         ds_allowin    ,
     //from fs
@@ -28,11 +29,16 @@ module id_stage(
     //to es
     output                         ds_to_es_valid,
     output [`DS_TO_ES_BUS_WD -1:0] ds_to_es_bus  ,
+    output [`CSR_TO_EXE_BUS_WD-1:0] csr_to_exe_bus,
+    output [`CSR_TO_MEM_BUS_WD-1:0] csr_to_mem_bus,
     //to fs
     output [`BR_BUS_WD       -1:0] br_bus        ,
     output [`CSR_BUS_WD       -1:0] ds_to_fs_csr_bus,
     //to rf: for write back
-    input  [`WS_TO_RF_BUS_WD -1:0] ws_to_rf_bus
+    input  [`WS_TO_RF_BUS_WD -1:0] ws_to_rf_bus,
+    // from tlb
+    input [`TLBSRH_TO_CSR_BUS_WD-1:0] tlbsrh_to_csr_bus,
+    input [`TLBRD_TO_CSR_BUS_WD-1:0] tlbrd_to_csr_bus
 );
 
 wire        br_taken;
@@ -194,6 +200,16 @@ wire inst_rdcntvl_w;
 wire inst_rdcntvh_w;
 wire inst_rdcntid;
 
+// !exp18添加指令
+wire inst_tlbsrch;
+wire inst_tlbrd;
+wire inst_tlbwr;
+wire inst_tlbfill;
+wire inst_invtlb;
+wire invtlb_valid;
+wire [4:0] invtlb_op;
+wire [2:0] tlbop;
+
 wire        need_ui5;
 wire        need_si12;
 wire        need_ui12;
@@ -296,15 +312,32 @@ assign inst_mod    = op_31_26_d[6'h00] & op_25_22_d[4'h00] & op_21_20_d[2'h2] & 
 assign inst_modu   = op_31_26_d[6'h00] & op_25_22_d[4'h00] & op_21_20_d[2'h2] & op_19_15_d[5'h03];
 
 
-assign inst_csrrd = op_31_26_d[6'h01] & op_9_5_d[5'h00];
-assign inst_csrwr = op_31_26_d[6'h01] & op_9_5_d[5'h01];
-assign inst_csrxchg = op_31_26_d[6'h01] & ((!op_9_5_d[5'h00]) & (!op_9_5_d[5'h01]));
-assign inst_ertn = op_31_26_d[6'h01] & op_25_22_d[4'h09];
+assign inst_csrrd = op_31_26_d[6'h01] & ds_inst[25:24] == 2'b0 & op_9_5_d[5'h00];
+assign inst_csrwr = op_31_26_d[6'h01] & ds_inst[25:24] == 2'b0 & op_9_5_d[5'h01];
+assign inst_csrxchg = op_31_26_d[6'h01] & ds_inst[25:24] == 2'b0 & ((!op_9_5_d[5'h00]) & (!op_9_5_d[5'h01]));
+assign inst_ertn = ds_inst == 32'h06483800;
 assign inst_syscall = op_31_26_d[6'h00] & op_25_22_d[4'h0] & op_21_20_d[2'h2] & op_19_15_d[5'h16];
 assign inst_break = op_31_26_d[6'h00] & op_25_22_d[4'h0] & op_21_20_d[2'h2] & op_19_15_d[5'h14];
 assign inst_rdcntvl_w = op_31_26_d[6'h00] & op_25_22_d[4'h0] & op_21_20_d[2'h0] & op_19_15_d[5'h00] & op_14_10_d[5'h18] & op_9_5_d[5'h0];
 assign inst_rdcntvh_w = op_31_26_d[6'h00] & op_25_22_d[4'h0] & op_21_20_d[2'h0] & op_19_15_d[5'h00] & op_14_10_d[5'h19] & op_9_5_d[5'h0];
 assign inst_rdcntid   = op_31_26_d[6'h00] & op_25_22_d[4'h0] & op_21_20_d[2'h0] & op_19_15_d[5'h00] & op_14_10_d[5'h18] & op_4_0_d[5'h0];
+
+// wire inst_tlbsrch;
+// wire inst_tlbrd;
+// wire inst_tlbwr;
+// wire inst_tlbfill;
+// wire inst_invtlb;
+assign inst_tlbsrch = ds_inst == 32'h06482800;
+assign inst_tlbrd = ds_inst == 32'h06482c00;
+assign inst_tlbwr = ds_inst == 32'h06483000;
+assign inst_tlbfill = ds_inst == 32'h06483400;
+assign inst_invtlb = op_31_26_d[6'h01] & op_25_22_d[4'h9] & op_21_20_d[2'h0] & op_19_15_d[5'h13];
+
+assign tlbop = inst_tlbsrch ? 3'b001 :
+               inst_tlbrd   ? 3'b010 :
+               inst_tlbwr   ? 3'b011  :
+               inst_tlbfill ? 3'b100 :
+               inst_invtlb  ? 3'b101 : 3'b000;
 
 assign alu_op[ 0] = inst_add_w | inst_addi_w | inst_ld_w | inst_ld_b | inst_ld_h | inst_ld_bu | inst_ld_hu | inst_st_w | inst_st_b | inst_st_h
                     | inst_jirl | inst_bl;
@@ -385,7 +418,8 @@ assign src2_is_imm   = inst_slli_w |
                        inst_andi   |
                        inst_ori    |
                        inst_xori;
-
+assign invtlb_valid = inst_invtlb;
+assign invtlb_op = ds_inst[4:0];
 assign res_from_mem  = inst_ld_w | inst_ld_b | inst_ld_h | inst_ld_bu | inst_ld_hu;
 //!csr
 assign res_from_csr = inst_csrrd | inst_csrwr | inst_csrxchg | inst_rdcntid;
@@ -404,12 +438,14 @@ assign INE_exc =  ~(inst_add_w | inst_sub_w | inst_slt | inst_sltu | inst_nor | 
                   inst_pcaddu | inst_slti | inst_sltui | inst_andi | inst_ori | inst_xori | inst_sllw | inst_sraw | inst_srlw | inst_div |
                   inst_divu | inst_mulw | inst_mulhw | inst_mulhwu | inst_mod | inst_modu | inst_blt | inst_bge | inst_bltu | inst_bgeu | 
                   inst_ld_b | inst_ld_h | inst_ld_bu | inst_ld_hu | inst_st_b | inst_st_h | inst_csrrd | inst_csrwr | inst_csrxchg | inst_ertn | 
-                  inst_syscall | inst_break | inst_rdcntid | inst_rdcntvh_w | inst_rdcntvl_w);
+                  inst_syscall | inst_break | inst_rdcntid | inst_rdcntvh_w | inst_rdcntvl_w | inst_tlbsrch | inst_tlbrd | inst_tlbwr | inst_tlbfill |
+                  inst_invtlb);
+
 
 //! 触发BRK异常
-assign is_exc = ((inst_break | inst_syscall | ADEF_exc | INE_exc | need_interrupt) & ds_valid) | ALE_exc;
+assign is_exc = ((inst_break | inst_syscall | ADEF_exc | INE_exc | need_interrupt) & ds_valid) | ALE_exc | invtlb_op_exc;
 assign is_ret = inst_ertn & ds_valid;
-assign is_following_exc = es_to_ds_is_exc | ms_to_ds_is_exc | ws_to_ds_is_exc | ALE_exc;
+assign is_following_exc = es_to_ds_is_exc | ms_to_ds_is_exc | ws_to_ds_is_exc | ALE_exc | invtlb_op_exc;
 
 //! 记录异常信息
 assign Ecode = inst_syscall ? 6'hb :
@@ -423,11 +459,10 @@ assign EsubCode = 9'h0;
 assign syscall_code = ds_inst[14:0];//?暂时不知到有什么用
 assign break_code = ds_inst[14:0];//?暂时不知到有什么用
 
-
-
 assign dst_is_r1     = inst_bl;
 //! 由于这个信号采用的是与非的形式，所以需要区别对待
-assign gr_we         = (~inst_st_w & ~inst_st_b & ~inst_st_h & ~inst_beq & ~inst_bne & ~inst_b & ~inst_blt & ~inst_bge & ~inst_bltu & ~inst_bgeu & ~INE_exc & ~is_following_exc & ~inst_ertn) & ds_valid;
+assign gr_we         = (~inst_st_w & ~inst_st_b & ~inst_st_h & ~inst_beq & ~inst_bne & ~inst_b & ~inst_blt & ~inst_bge & ~inst_bltu & ~inst_bgeu & ~inst_ertn & 
+                        ~inst_tlbsrch & ~inst_tlbrd & ~inst_tlbwr & ~inst_tlbfill & ~inst_invtlb) & ds_valid & ~INE_exc & ~is_following_exc;
 assign mem_we        = (inst_st_w | inst_st_b | inst_st_h) & ~is_following_exc & ds_valid;
 assign dest_is_rj    = inst_rdcntid;
 //!bne的dest不存在！！！！因为不写入数据
@@ -503,7 +538,10 @@ assign ds_to_es_bus = {alu_op       ,   // 28
                        pc_to_badv,
                        Addr_exc,
                        Ecode,
-                       EsubCode
+                       EsubCode,
+                       invtlb_valid,
+                       invtlb_op,
+                       tlbop
                     };
 
     //                     .pc_to_era(pc_to_era),
@@ -545,10 +583,10 @@ assign need_cnt_id = inst_rdcntid;
 
 
 //! csr没有rj和rk, 实际上它的rd也不会触发流水线前递，因为不需要使用
-assign src_no_rj    = inst_b | inst_bl | inst_lu12i_w | inst_csrrd | inst_csrwr;
+assign src_no_rj    = inst_b | inst_bl | inst_lu12i_w | inst_csrrd | inst_csrwr| inst_tlbsrch | inst_tlbrd | inst_tlbwr | inst_tlbfill;
 assign src_no_rk    = inst_slli_w | inst_srli_w | inst_srai_w | inst_addi_w | inst_ld_w | inst_ld_b | inst_ld_h | inst_ld_bu | inst_ld_hu | inst_st_w | inst_st_b | inst_st_h | inst_jirl | 
                       inst_b | inst_bl | inst_beq | inst_bne | inst_blt | inst_bge | inst_bltu | inst_bgeu | inst_lu12i_w | inst_slti | inst_sltui| inst_andi |
-                      inst_ori| inst_xori | inst_csrrd | inst_csrwr | inst_csrxchg | inst_rdcntvh_w | inst_rdcntvl_w | inst_rdcntid;
+                      inst_ori| inst_xori | inst_csrrd | inst_csrwr | inst_csrxchg | inst_rdcntvh_w | inst_rdcntvl_w | inst_rdcntid| inst_tlbsrch | inst_tlbrd | inst_tlbwr | inst_tlbfill;
 //!别忘记！
 assign src_no_rd    = ~inst_st_b & ~inst_st_h & ~inst_st_w & ~inst_beq & ~inst_bne & ~inst_blt & ~inst_bge & ~inst_bltu & ~inst_bgeu & ~inst_csrwr & ~inst_csrxchg;
 
@@ -618,7 +656,7 @@ assign era_exc = is_ret & (csr_era[1:0] != 2'b00);
 //?异常处理程序的地址不会错误吗？
 assign pc_to_era = br_exc ? br_target : 
                    era_exc ? csr_era  :
-                   ALE_exc ? es_pc    :
+                   ALE_exc | invtlb_op_exc ? es_pc    :
                    ds_pc;
 
 assign pc_to_badv =  br_exc ? br_target : 
@@ -627,6 +665,7 @@ assign pc_to_badv =  br_exc ? br_target :
                      32'h0;
 
 assign Addr_exc = ADEF_exc | ALE_exc;
+
 csr u_csr(
     .clk(clk),
     .reset(reset),
@@ -636,6 +675,10 @@ csr u_csr(
     .EENTRY(csr_eentry),
     .rj_value(rj_value),
     .need_interrupt(need_interrupt),
+    .tlbsrh_to_csr_bus(tlbsrh_to_csr_bus),
+    .tlbrd_to_csr_bus(tlbrd_to_csr_bus),
+    .csr_to_exe_bus(csr_to_exe_bus),
+    .csr_to_mem_bus(csr_to_mem_bus),
 
     .we(csr_we),
     .waddr(csr_num),
@@ -649,6 +692,7 @@ csr u_csr(
     .EsubCode(fms_EsubCode)
 
 );
+
 
 // csr_we, csr_num, rkd_value
 assign ds_ready_go    = ds_valid & ~load_stall;

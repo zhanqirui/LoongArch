@@ -76,6 +76,73 @@ wire ws_to_ds_is_exc;
 wire [31:0] cnt_value_l;
 wire [31:0] cnt_value_h;
 
+wire invtlb_valid;
+wire [4:0] invtlb_op;
+wire invtlb_op_exc;
+// search port 0
+wire [18:0] s0_vppn;
+wire        s0_va_bit12;
+wire [9 :0] s0_asid;
+wire        s0_found;
+wire [3:0]s0_index;
+wire [19:0] s0_ppn;
+wire [5 :0] s0_ps;
+wire [1 :0] s0_plv;
+wire [1 :0] s0_mat;
+wire        s0_d;
+wire        s0_v;
+// search port 1
+wire [18:0] s1_vppn;
+wire        s1_va_bit12;
+wire [9 :0] s1_asid;
+wire        s1_found;
+wire [3:0] s1_index;
+wire [19:0] s1_ppn;
+wire [5 :0] s1_ps;
+wire [1 :0] s1_plv;
+wire [1 :0] s1_mat;
+wire        s1_d;
+wire        s1_v;
+// write port
+wire        we;
+wire [3:0] w_index;
+wire        w_ne;
+wire [18:0] w_vppn;
+wire [5 :0] w_ps  ;
+wire [9 :0] w_asid;
+wire        w_g1;
+wire        w_g0;
+wire [19:0] w_ppn0;
+wire [1 :0] w_plv0;
+wire [1 :0] w_mat0;
+wire        w_d0;
+wire        w_v0;
+wire [19:0] w_ppn1;
+wire [1 :0] w_plv1;
+wire [1 :0] w_mat1;
+wire        w_d1;
+wire        w_v1;
+// read port
+wire [3:0] r_index;
+wire        r_e;
+wire [18:0] r_vppn;
+wire [5 :0] r_ps;
+wire [9 :0] r_asid;
+wire        r_g;
+wire [19:0] r_ppn0;
+wire [1 :0] r_plv0;
+wire [1 :0] r_mat0;
+wire        r_d0;
+wire        r_v0;
+wire [19:0] r_ppn1;
+wire [1 :0] r_plv1;
+wire [1 :0] r_mat1;
+wire        r_d1;
+wire        r_v1;
+
+
+wire tlbcsr_srch_wen;
+wire tlbcsr_rd_wen;
 
 wire         es_to_ds_load_op;
 wire [31:0] es_to_ds_result;
@@ -89,6 +156,12 @@ wire [`MS_TO_WS_BUS_WD -1:0] ms_to_ws_bus;
 wire [`WS_TO_RF_BUS_WD -1:0] ws_to_rf_bus;
 wire [`BR_BUS_WD       -1:0] br_bus;
 wire [`MS_TO_DS_EXBUS_WD - 1: 0] ms_to_ds_exbus;
+wire [`CSR_TO_EXE_BUS_WD-1:0] csr_to_exe_bus;
+wire [`CSR_TO_MEM_BUS_WD-1:0] csr_to_mem_bus;
+wire [`EXE_TO_TLB_BUS_WD-1:0] exe_to_tlb_bus;
+wire [`TLBSRH_TO_CSR_BUS_WD-1:0] tlbsrh_to_csr_bus;
+wire [`MEM_TO_TLB_BUS_WD-1:0] mem_to_tlb_bus;
+wire [`TLBRD_TO_CSR_BUS_WD-1:0] tlbrd_to_csr_bus;
 
 // inst sram interface
 wire        inst_sram_req;
@@ -110,6 +183,38 @@ wire [31:0] data_sram_wdata;
 wire         data_sram_addr_ok;
 wire         data_sram_data_ok;
 wire  [31:0] data_sram_rdata;
+
+
+assign {    
+    tlbcsr_srch_wen,
+    s1_vppn,
+    s1_asid,
+    s1_va_bit12,
+    invtlb_valid,
+    invtlb_op } = exe_to_tlb_bus;
+
+assign {
+    tlbcsr_rd_wen,
+    r_index,
+    we,
+    w_index,
+    w_ps,
+    w_ne,
+    w_vppn,
+    w_v0,
+    w_d0,
+    w_plv0,
+    w_mat0,
+    w_g0,
+    w_ppn0,
+    w_v1,
+    w_d1,
+    w_plv1,
+    w_mat1,
+    w_g1,
+    w_ppn1,
+    w_asid 
+} = mem_to_tlb_bus;
 
 axi_bridge u_axi_bridge (
     .clk(clk),
@@ -250,13 +355,18 @@ id_stage id_stage(
     .ms_to_ds_is_exc(ms_to_ds_is_exc),
     .ws_to_ds_is_exc(ws_to_ds_is_exc),
     .ALE_exc(ALE_exc),
+    .invtlb_op_exc(invtlb_op_exc),
     .es_pc(es_pc),
     .ds_to_fs_csr_bus(ds_to_fs_csr_bus),
     .ms_to_ds_exbus(ms_to_ds_exbus),
     //to fs
     .br_bus         (br_bus         ),
     //to rf: for write back
-    .ws_to_rf_bus   (ws_to_rf_bus   )
+    .ws_to_rf_bus   (ws_to_rf_bus   ),
+    .csr_to_exe_bus (csr_to_exe_bus),
+    .csr_to_mem_bus (csr_to_mem_bus),
+    .tlbsrh_to_csr_bus (tlbsrh_to_csr_bus),
+    .tlbrd_to_csr_bus (tlbrd_to_csr_bus)
 );
 
 // EXE stage
@@ -271,6 +381,7 @@ exe_stage exe_stage(
     .es_to_ds_is_exc(es_to_ds_is_exc),
     .es_pc(es_pc),
     .ALE_exc(ALE_exc),
+    .invtlb_op_exc(invtlb_op_exc),
     //from ds
     .ds_to_es_valid (ds_to_es_valid ),
     .ds_to_es_bus   (ds_to_es_bus   ),
@@ -280,6 +391,12 @@ exe_stage exe_stage(
     .es_to_ds_load_op(es_to_ds_load_op),
     .es_to_ds_result(es_to_ds_result),
     .data_sram_addr_ok(data_sram_addr_ok),
+
+    // from csr
+    .csr_to_exe_bus (csr_to_exe_bus),
+    // to tlb
+    .exe_to_tlb_bus (exe_to_tlb_bus),
+
     // data sram interface
     .data_sram_req   (data_sram_req   ),
     .data_sram_wr   (data_sram_wr),
@@ -312,7 +429,9 @@ mem_stage mem_stage(
     .data_sram_rdata(data_sram_rdata),
     //from cnt
     .cnt_value_l(cnt_value_l),
-    .cnt_value_h(cnt_value_h)
+    .cnt_value_h(cnt_value_h),
+    .csr_to_mem_bus (csr_to_mem_bus),
+    .mem_to_tlb_bus (mem_to_tlb_bus)
 );
 
 // WB stage
@@ -336,5 +455,81 @@ wb_stage wb_stage(
     .debug_wb_rf_wnum (debug_wb_rf_wnum ),
     .debug_wb_rf_wdata(debug_wb_rf_wdata)
 );
+
+wire ne_to_csr;
+wire [3:0] index_to_csr;
+assign ne_to_csr = ~(s1_found);
+assign index_to_csr = s1_index;
+
+
+tlb #(.TLBNUM(16)) u_tlb (
+    .clk         (clk     ),
+
+    .s0_vppn     (s0_vppn    ),//i
+    .s0_va_bit12 (s0_va_bit12),//i
+    .s0_asid     (s0_asid    ),//i
+    .s0_found    (s0_found   ),
+    .s0_index    (s0_index   ),
+    .s0_ppn      (s0_ppn     ),
+    .s0_ps       (s0_ps      ),
+    .s0_plv      (s0_plv     ),
+    .s0_mat      (s0_mat     ),
+    .s0_d        (s0_d       ),
+    .s0_v        (s0_v       ),
+
+    .s1_vppn     (s1_vppn    ),//i
+    .s1_va_bit12 (s1_va_bit12),//i
+    .s1_asid     (s1_asid    ),//i
+    .s1_found    (s1_found   ),
+    .s1_index    (s1_index   ),
+    .s1_ppn      (s1_ppn     ),
+    .s1_ps       (s1_ps      ),
+    .s1_plv      (s1_plv     ),
+    .s1_mat      (s1_mat     ),
+    .s1_d        (s1_d       ),
+    .s1_v        (s1_v       ),
+
+    .invtlb_valid(invtlb_valid),
+    .invtlb_op   (invtlb_op),
+
+    .we          (we         ),//i
+    .w_index     (w_index    ),//i
+    .w_e         (~w_ne        ),//i
+    .w_vppn      (w_vppn     ),//i
+    .w_ps        (w_ps       ),//i
+    .w_asid      (w_asid     ),//i
+    .w_g         (w_g0 & w_g1 ),//i
+    .w_ppn0      (w_ppn0     ),//i
+    .w_plv0      (w_plv0     ),//i
+    .w_mat0      (w_mat0     ),//i
+    .w_d0        (w_d0       ),//i
+    .w_v0        (w_v0       ),//i
+    .w_ppn1      (w_ppn1     ),//i
+    .w_plv1      (w_plv1     ),//i
+    .w_mat1      (w_mat1     ),//i
+    .w_d1        (w_d1       ),//i
+    .w_v1        (w_v1       ),//i
+
+    .r_index     (r_index    ),//i
+    .r_e         (r_e        ),
+    .r_vppn      (r_vppn     ),
+    .r_ps        (r_ps       ),
+    .r_asid      (r_asid     ),
+    .r_g         (r_g        ),
+    .r_ppn0      (r_ppn0     ),
+    .r_plv0      (r_plv0     ),
+    .r_mat0      (r_mat0     ),
+    .r_d0        (r_d0       ),
+    .r_v0        (r_v0       ),
+    .r_ppn1      (r_ppn1     ),
+    .r_plv1      (r_plv1     ),
+    .r_mat1      (r_mat1     ),
+    .r_d1        (r_d1       ),
+    .r_v1        (r_v1       )
+);
+assign tlbsrh_to_csr_bus = { tlbcsr_srch_wen, ne_to_csr, index_to_csr};
+assign tlbrd_to_csr_bus = {tlbcsr_rd_wen, r_e, r_vppn, r_ps, r_asid, r_g, r_ppn0,r_plv0,
+                           r_mat0, r_d0, r_v0, r_ppn1, r_plv1,r_mat1, 
+                           r_d1, r_v1};
 
 endmodule

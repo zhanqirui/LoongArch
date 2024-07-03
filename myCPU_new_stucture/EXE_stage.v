@@ -15,6 +15,7 @@ module exe_stage(
     output wire[31:0] es_to_ds_result,
     output wire[31:0] es_pc,
     output wire   ALE_exc,
+    output wire   invtlb_op_exc,
 
     output es_to_ds_is_exc,
     //to ms
@@ -23,6 +24,10 @@ module exe_stage(
 
     input              data_sram_addr_ok,
     input              data_sram_data_ok,
+    // from csr
+    input [`CSR_TO_EXE_BUS_WD-1:0] csr_to_exe_bus,
+    // to tlb
+    output [`EXE_TO_TLB_BUS_WD-1:0] exe_to_tlb_bus,
     // data sram interface(write)
     output wire        data_sram_req   ,
     output wire        data_sram_wr    ,
@@ -71,12 +76,39 @@ wire  [31:0] es_pc_to_era;
 wire  [31:0] pc_to_era;
 wire  [31:0] es_pc_to_badv;
 wire  [31:0] pc_to_badv;
+
 wire  Addr_exc;
 wire  es_Addr_exc;
 wire  [5:0] es_Ecode;
 wire  [5:0] Ecode;
 wire  [8:0] es_EsubCode;
 wire  [8:0] EsubCode;
+wire [18:0] vppn;
+wire [9:0] asid;
+
+wire [2:0] tlbop;
+wire invtlb_valid;
+wire [4:0] invtlb_op;
+wire s1_va_bit12;
+wire [18:0] vppn_to_tlb;
+wire [9:0] asid_to_tlb;
+wire tlbcsr_srch_wen;
+
+wire [31:0] alu_src1   ;
+wire [31:0] alu_src2   ;
+wire [31:0] alu_result ;
+wire [31:0] st_data;
+wire [1:0] alu_1_0;
+
+wire st_inst;
+wire st_or_ld;
+
+assign invtlb_op_exc = (invtlb_op > 5'h6) & es_valid & invtlb_valid;
+
+assign {
+    vppn,
+    asid
+} = csr_to_exe_bus;
 
 assign {alu_op,
         es_load_op,
@@ -102,26 +134,36 @@ assign {alu_op,
         pc_to_badv,
         Addr_exc,
         Ecode,
-        EsubCode
+        EsubCode,
+        invtlb_valid,
+        invtlb_op,
+        tlbop
        } = ds_to_es_bus_r;
        
+assign vppn_to_tlb = tlbop == 3'b001 ? vppn :
+                     tlbop == 3'b101 ? alu_src2[31:13] : 19'b0;
+assign asid_to_tlb = tlbop == 3'b001 ? asid :
+                     tlbop == 3'b101 ? alu_src1[9:0] : 10'b0;
+assign s1_va_bit12 = 1'b0;
 
+assign tlbcsr_srch_wen = tlbop == 3'b001;
 
-
-wire [31:0] alu_src1   ;
-wire [31:0] alu_src2   ;
-wire [31:0] alu_result ;
-wire [31:0] st_data;
-wire [1:0] alu_1_0;
-
-wire st_inst;
-wire st_or_ld;
+assign exe_to_tlb_bus = 
+{
+    tlbcsr_srch_wen,
+    vppn_to_tlb,
+    asid_to_tlb,
+    s1_va_bit12,
+    invtlb_valid,
+    invtlb_op
+};
 
 assign es_pc_to_era = ALE_exc ? es_pc : pc_to_era;
 assign es_pc_to_badv = ALE_exc ? alu_result : pc_to_badv;
-assign es_Ecode = ALE_exc ? 6'h9 : Ecode;
+assign es_Ecode = ALE_exc ? 6'h9 : 
+                  invtlb_op_exc ? 6'hd : Ecode;
 assign es_EsubCode = 9'h0;
-assign es_is_exc = (is_exc | ALE_exc) & es_valid;
+assign es_is_exc = (is_exc | ALE_exc | invtlb_op_exc) & es_valid;
 assign es_Addr_exc = ALE_exc ? es_valid : Addr_exc;
 
 assign st_or_ld = st_inst | es_to_ds_load_op;
@@ -156,7 +198,8 @@ assign es_to_ms_bus = {
                        es_pc_to_badv,
                        es_Addr_exc,
                        es_Ecode,
-                       es_EsubCode
+                       es_EsubCode,
+                       tlbop
                       };
 
 assign alu_src1 = src1_is_pc  ? es_pc  : rj_value;

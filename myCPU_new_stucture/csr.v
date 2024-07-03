@@ -1,5 +1,8 @@
 `define N 12
 `define SUB_N 20
+`define TLBELEN 4
+`define PALEN 32
+`include "mycpu.h"
 module csr(
     //!需要新增接口: pc, is_exc, is_return?
     // pc:异常发生时，pc写入ERA中
@@ -15,6 +18,11 @@ module csr(
     output reg[31:0] ERA,
     output reg[31:0] EENTRY,
     output need_interrupt,
+    output [`CSR_TO_EXE_BUS_WD-1:0] csr_to_exe_bus,
+    output [`CSR_TO_MEM_BUS_WD-1:0] csr_to_mem_bus,
+
+    input [`TLBSRH_TO_CSR_BUS_WD-1:0] tlbsrh_to_csr_bus,
+    input [`TLBRD_TO_CSR_BUS_WD-1:0] tlbrd_to_csr_bus,
 
     input [1:0]  we,
     input [13:0] waddr,
@@ -29,6 +37,7 @@ module csr(
 
 reg [31:0] CRMD, PRMD, ESTAT, SAVE1, SAVE2, SAVE3, SAVE0;
 reg [31:0] ECFG, BADV, TID, TCFG, TVAL, TICLR;
+reg [31:0] TLBIDX, TLBEHI, TLBELO0, TLBELO1, ASID, TLBRENTRY;
 
 reg  TCFG_En;
 reg TCFG_Periodic;
@@ -51,6 +60,80 @@ wire [12:0] LIE;
 wire [12:0] IS;
 
 wire [12:0] int_vec;
+
+wire [3:0] r_index;
+wire [5:0] r_ps;
+wire r_ne;
+wire [18:0] r_vppn;
+wire r_v0,r_d0, r_v1, r_d1, r_g0, r_g1;
+wire [1:0] r_plv0, r_mat0, r_plv1, r_mat1;
+wire [19:0] r_ppn0, r_ppn1;
+
+wire [9:0] r_asid;
+
+wire tlbcsr_srch_wen, tlbcsr_rd_wen;
+wire ne_in;
+wire [3:0]index_in;
+wire w_e, w_g, w_d0, w_v0, w_d1, w_v1;
+wire [5:0] w_ps;
+wire [18:0] w_vppn;
+wire [9:0] w_asid;
+wire [1:0] w_plv0, w_plv1, w_mat0, w_mat1;
+wire [19:0] w_ppn0, w_ppn1;
+
+assign {tlbcsr_srch_wen, ne_in, index_in} = tlbsrh_to_csr_bus;
+assign {tlbcsr_rd_wen, w_e, w_vppn, w_ps, w_asid, w_g, w_ppn0,w_plv0,
+                           w_mat0, w_d0, w_v0, w_ppn1, w_plv1,w_mat1, 
+                           w_d1, w_v1} = tlbrd_to_csr_bus;
+
+
+assign r_index = TLBIDX[3:0];
+assign r_ps = TLBIDX[29:24];
+assign r_ne = TLBIDX[31] & ~(ESTAT[26:21] == 6'h3f);
+
+assign r_vppn = TLBEHI[31:13];
+
+assign r_v0 = TLBELO0[0];
+assign r_d0 = TLBELO0[1];
+assign r_plv0 = TLBELO0[3:2];
+assign r_mat0 = TLBELO0[5:4];
+assign r_g0 = TLBELO0[6];
+assign r_ppn0 = TLBELO0[27:8];
+
+assign r_v1 = TLBELO1[0];
+assign r_d1 = TLBELO1[1];
+assign r_plv1 = TLBELO1[3:2];
+assign r_mat1 = TLBELO1[5:4];
+assign r_g1 = TLBELO1[6];
+assign r_ppn1 = TLBELO1[27:8];
+
+assign r_asid = ASID[9:0];
+
+
+assign csr_to_exe_bus = {
+                        r_vppn,
+                        r_asid
+};
+
+assign csr_to_mem_bus = {
+                        r_index,
+                        r_ps,
+                        r_ne,
+                        r_vppn,
+                        r_v0,
+                        r_d0,
+                        r_plv0,
+                        r_mat0,
+                        r_g0,
+                        r_ppn0,
+                        r_v1,
+                        r_d1,
+                        r_plv1,
+                        r_mat1,
+                        r_g1,
+                        r_ppn1,
+                        r_asid 
+};
 
 // 0 和 1
 always@(posedge clk) begin
@@ -173,6 +256,75 @@ always@(posedge clk)
         EENTRY <= wdata;
     else if(we[1] && waddr == 14'hc)
         EENTRY <= EENTRY & ~rj_value | wdata & rj_value;
+
+
+//10
+always@(posedge clk)
+    if(reset)
+        TLBIDX <= 32'h00000000;
+    else if(tlbsrh_to_csr_bus[5])begin
+        TLBIDX[31] <= ne_in;
+        if(~ne_in)
+            TLBIDX[3:0] <= index_in;
+    end
+    else if(tlbcsr_rd_wen)begin
+        TLBIDX[29:24] <= w_ps;
+        TLBIDX[31] <= ~w_e;
+    end
+    else if(we[0] && waddr == 14'h10)
+        TLBIDX <= wdata;
+    else if(we[1] && waddr == 14'h10)
+        TLBIDX <= TLBIDX & ~rj_value | wdata & rj_value;
+
+//11
+always@(posedge clk)
+    if(reset)
+        TLBEHI <= 32'h00000000;
+    else if(tlbcsr_rd_wen)begin
+        TLBEHI[31:13] <= w_vppn; 
+    end
+    else if(we[0] && waddr == 14'h11)
+        TLBEHI <= wdata;
+    else if(we[1] && waddr == 14'h11)
+        TLBEHI <= TLBEHI & ~rj_value | wdata & rj_value;
+
+//12
+always@(posedge clk)
+    if(reset)
+        TLBELO0 <= 32'h00000000;
+    else if(tlbcsr_rd_wen)begin
+        TLBELO0[6:0] <= {w_g, w_mat0, w_plv0, w_d0, w_v0};
+        TLBELO0[27:8] <= w_ppn0;
+    end
+    else if(we[0] && waddr == 14'h12)
+        TLBELO0 <= wdata;
+    else if(we[1] && waddr == 14'h12)
+        TLBELO0 <= TLBELO0 & ~rj_value | wdata & rj_value;
+
+//13
+always@(posedge clk)
+    if(reset)
+        TLBELO1 <= 32'h00000000;
+    else if(tlbcsr_rd_wen)begin
+        TLBELO1[6:0] <= {w_g, w_mat1, w_plv1, w_d1, w_v1};
+        TLBELO1[27:8] <= w_ppn1;
+    end
+    else if(we[0] && waddr == 14'h13)
+        TLBELO1 <= wdata;
+    else if(we[1] && waddr == 14'h13)
+        TLBELO1 <= TLBELO1 & ~rj_value | wdata & rj_value;
+
+//18
+always@(posedge clk)
+    if(reset)
+        ASID <= 32'h000a0000;
+    else if(tlbcsr_rd_wen)begin
+        ASID[9:0] <= w_asid;
+    end
+    else if(we[0] && waddr == 14'h18)
+        ASID <= wdata;
+    else if(we[1] && waddr == 14'h18)
+        ASID <= ASID & ~rj_value | wdata & rj_value;
 
 // 30 
 always@(posedge clk)
@@ -302,12 +454,26 @@ always@(posedge clk)
 //清除定时器中断
 assign TICLR_CLR = ((we[0] || we[1]) && waddr == 14'h44) ? 1'b1 : 1'b0;
 
+//88
+always@(posedge clk)
+    if(reset)
+        TLBRENTRY <= 32'h00000000;
+    else if(we[0] && waddr == 14'h88)
+        TLBRENTRY <= wdata;
+    else if(we[1] && waddr == 14'h88)
+        TLBRENTRY <= TLBRENTRY & ~rj_value | wdata & rj_value;
+
 assign rdata = raddr == 14'h0 ? {23'b0, CRMD[8:0]} :
                raddr == 14'h1 ? {29'b0, PRMD[2:0]} :
                raddr == 14'h4 ? {19'b0, ECFG[12:11], 1'b0, ECFG[9:0]} :
                raddr == 14'h5 ? {1'b0, ESTAT[30:16], 3'b0, IS} :
                raddr == 14'h6 ? ERA :
                raddr == 14'h7 ? BADV :
+               raddr == 14'h10 ? {TLBIDX[31], 1'b0, TLBIDX[29:24], 20'b0, TLBIDX[3:0]}:
+               raddr == 14'h11 ? {TLBEHI[31:13], 13'b0} :
+               raddr == 14'h12 ? {4'b0, TLBELO0[27:0]} :
+               raddr == 14'h13 ? {4'b0, TLBELO1[27:0]} :
+               raddr == 14'h18 ? {8'b0, 8'h0a, 6'b0, ASID[9:0]} :
                raddr == 14'h30 ? SAVE0 :
                raddr == 14'h31 ? SAVE1 :
                raddr == 14'h32 ? SAVE2 :
@@ -315,7 +481,9 @@ assign rdata = raddr == 14'h0 ? {23'b0, CRMD[8:0]} :
                raddr == 14'h40 ? TID :
                raddr == 14'h41 ? {`SUB_N'b0, TCFG_InitVal, TCFG_Periodic, TCFG_En} : 
                raddr == 14'h42 ? {`SUB_N'b0, TVAL_TimeVal} : 
-               raddr == 14'h44 ? 32'h0 : 32'h0;
+               raddr == 14'h44 ? 32'h0 : 
+               raddr == 14'h88 ? {TLBRENTRY[31:6], 6'b0} : 
+               32'h0;
 
 
 endmodule

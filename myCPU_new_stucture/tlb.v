@@ -88,22 +88,25 @@ reg        tlb_v1    [TLBNUM - 1 : 0];
 wire  [TLBNUM - 1 : 0]         match0;    
 wire  [TLBNUM - 1 : 0]         match1;    
 
+integer i;
+
 // Read port
 assign r_e    = tlb_e[r_index];      
-assign r_vppn = tlb_vppn[r_index];
-assign r_ps   = tlb_ps[r_index];
-assign r_asid = tlb_asid[r_index];
-assign r_g    = tlb_g[r_index];
-assign r_ppn0 = tlb_ppn0[r_index];
-assign r_plv0 =  tlb_plv0[r_index];
-assign r_mat0 =  tlb_mat0[r_index];
-assign r_d0   =  tlb_d0[r_index];
-assign r_v0   =  tlb_v0[r_index];
-assign r_ppn1 =  tlb_ppn1[r_index];
-assign r_plv1 =  tlb_plv1[r_index];
-assign r_mat1 =  tlb_mat1[r_index];
-assign r_d1   =  tlb_d1[r_index];
-assign r_v1   =  tlb_v1[r_index];
+assign r_vppn = r_e ? tlb_vppn[r_index] : 0;
+assign r_ps   = r_e ?  tlb_ps[r_index] : 0;
+assign r_asid = r_e ?  tlb_asid[r_index] : 0;
+assign r_g    = r_e ?  tlb_g[r_index] : 0;
+assign r_ppn0 = r_e ?  tlb_ppn0[r_index] : 0;
+assign r_plv0 = r_e ?   tlb_plv0[r_index] : 0;
+assign r_mat0 = r_e ?   tlb_mat0[r_index] : 0;
+assign r_d0   = r_e ?   tlb_d0[r_index] : 0;
+assign r_v0   = r_e ?   tlb_v0[r_index] : 0;
+assign r_ppn1 = r_e ?   tlb_ppn1[r_index] : 0;
+assign r_plv1 = r_e ?   tlb_plv1[r_index] : 0;
+assign r_mat1 = r_e ?   tlb_mat1[r_index] : 0;
+assign r_d1   = r_e ?   tlb_d1[r_index] : 0;
+assign r_v1   = r_e ?   tlb_v1[r_index] : 0;
+
 
 //write port
 always @(posedge clk) begin
@@ -124,6 +127,45 @@ always @(posedge clk) begin
         tlb_d1[w_index] <= w_d1;
         tlb_v1[w_index] <= w_v1;
     end
+    else if(invtlb_valid)begin
+        if(invtlb_op == 5'b0 || invtlb_op == 5'b1)begin
+            for(i = 0; i < 16; i = i + 1)begin
+                tlb_e[i] <= 0;
+            end
+        end
+        else if(invtlb_op == 5'h2)begin
+            for(i = 0;i < 16;i = i + 1)begin
+                if(tlb_g[i])
+                    tlb_e[i] <= 0;
+            end
+        end
+        else if(invtlb_op == 5'h3)begin
+            for(i = 0;i < 16;i = i + 1)begin
+                if(~tlb_g[i])
+                    tlb_e[i] <= 0;
+            end
+        end
+        else if(invtlb_op == 5'h4)begin
+            for(i = 0;i < 16;i = i + 1)begin
+                if(tlb_g[i] == 0 && tlb_asid[i] == s1_asid)
+                    tlb_e[i] <= 0;
+            end
+        end
+        else if(invtlb_op == 5'h5)begin
+            for(i = 0;i < 16;i = i + 1)begin
+                if(tlb_g[i] == 0 && tlb_asid[i] == s1_asid && tlb_vppn[i] == s1_vppn)
+                    tlb_e[i] <= 0;
+            end
+        end
+        else if(invtlb_op == 5'h6)begin
+            for(i = 0;i < 16;i = i + 1)begin
+                if((tlb_g[i] == 1'b1 || tlb_asid[i] == s1_asid) && tlb_vppn[i] == s1_vppn)
+                    tlb_e[i] <= 0;
+            end
+        end
+        
+    end
+
 end
 
 wire is_match0;
@@ -174,22 +216,22 @@ assign s0_v      = s0_ps == 6'd12 && s0_va_bit12 || s0_ps == 6'd21 && s0_vppn[8]
 
 wire is_match1;
 
-assign match1[0]  = tlb_e[0] & (s1_vppn[18:10] == tlb_vppn[0][18:10])  && ((s1_asid == tlb_asid[0])  || tlb_g[0]) && (tlb_ps[0] == 6'd21  || s1_vppn[9:0]==tlb_vppn[ 0][9:0]);
-assign match1[1]  = tlb_e[1] & (s1_vppn[18:10] == tlb_vppn[1][18:10])  && ((s1_asid == tlb_asid[1])  || tlb_g[1]) && (tlb_ps[1] == 6'd21  || s1_vppn[9:0]==tlb_vppn[ 1][9:0]);
-assign match1[2]  = tlb_e[2] & (s1_vppn[18:10] == tlb_vppn[2][18:10])  && ((s1_asid == tlb_asid[2])  || tlb_g[2]) && (tlb_ps[2] == 6'd21  || s1_vppn[9:0]==tlb_vppn[ 2][9:0]);
-assign match1[3]  = tlb_e[3] & (s1_vppn[18:10] == tlb_vppn[3][18:10])  && ((s1_asid == tlb_asid[3])  || tlb_g[3]) && (tlb_ps[3] == 6'd21  || s1_vppn[9:0]==tlb_vppn[ 3][9:0]);
-assign match1[4]  = tlb_e[4] & (s1_vppn[18:10] == tlb_vppn[4][18:10])  && ((s1_asid == tlb_asid[4])  || tlb_g[4]) && (tlb_ps[4] == 6'd21  || s1_vppn[9:0]==tlb_vppn[ 4][9:0]);
-assign match1[5]  = tlb_e[5] & (s1_vppn[18:10] == tlb_vppn[5][18:10])  && ((s1_asid == tlb_asid[5])  || tlb_g[5]) && (tlb_ps[5] == 6'd21  || s1_vppn[9:0]==tlb_vppn[ 5][9:0]);
-assign match1[6]  = tlb_e[6] & (s1_vppn[18:10] == tlb_vppn[6][18:10])  && ((s1_asid == tlb_asid[6])  || tlb_g[6]) && (tlb_ps[6] == 6'd21  || s1_vppn[9:0]==tlb_vppn[ 6][9:0]);
-assign match1[7]  = tlb_e[7] & (s1_vppn[18:10] == tlb_vppn[7][18:10])  && ((s1_asid == tlb_asid[7])  || tlb_g[7]) && (tlb_ps[7] == 6'd21  || s1_vppn[9:0]==tlb_vppn[ 7][9:0]);
-assign match1[8]  = tlb_e[8] & (s1_vppn[18:10] == tlb_vppn[8][18:10])  && ((s1_asid == tlb_asid[8])  || tlb_g[8]) && (tlb_ps[8] == 6'd21  || s1_vppn[9:0]==tlb_vppn[ 8][9:0]);
-assign match1[9]  = tlb_e[9] & (s1_vppn[18:10] == tlb_vppn[9][18:10])  && ((s1_asid == tlb_asid[9])  || tlb_g[9]) && (tlb_ps[9] == 6'd21  || s1_vppn[9:0]==tlb_vppn[ 9][9:0]);
-assign match1[10] = tlb_e[10] & (s1_vppn[18:10] == tlb_vppn[10][18:10]) && ((s1_asid == tlb_asid[10]) || tlb_g[10]) && (tlb_ps[10] == 6'd21  || s1_vppn[9:0]==tlb_vppn[ 10][9:0]);
-assign match1[11] = tlb_e[11] & (s1_vppn[18:10] == tlb_vppn[11][18:10]) && ((s1_asid == tlb_asid[11]) || tlb_g[11]) && (tlb_ps[11] == 6'd21  || s1_vppn[9:0]==tlb_vppn[ 11][9:0]);
-assign match1[12] = tlb_e[12] & (s1_vppn[18:10] == tlb_vppn[12][18:10]) && ((s1_asid == tlb_asid[12]) || tlb_g[12]) && (tlb_ps[12] == 6'd21  || s1_vppn[9:0]==tlb_vppn[ 12][9:0]);
-assign match1[13] = tlb_e[13] & (s1_vppn[18:10] == tlb_vppn[13][18:10]) && ((s1_asid == tlb_asid[13]) || tlb_g[13]) && (tlb_ps[13] == 6'd21  || s1_vppn[9:0]==tlb_vppn[ 13][9:0]);
-assign match1[14] = tlb_e[14] & (s1_vppn[18:10] == tlb_vppn[14][18:10]) && ((s1_asid == tlb_asid[14]) || tlb_g[14]) && (tlb_ps[14] == 6'd21  || s1_vppn[9:0]==tlb_vppn[ 14][9:0]);
-assign match1[15] = tlb_e[15] & (s1_vppn[18:10] == tlb_vppn[15][18:10]) && ((s1_asid == tlb_asid[15]) || tlb_g[15]) && (tlb_ps[15] == 6'd21  || s1_vppn[9:0]==tlb_vppn[ 15][9:0]);
+assign match1[0]  = tlb_e[0] & (s1_vppn[18:9] == tlb_vppn[0][18:9])  && ((s1_asid == tlb_asid[0])  || tlb_g[0]) && (tlb_ps[0] == 6'd21  || s1_vppn[8:0]==tlb_vppn[ 0][8:0]);
+assign match1[1]  = tlb_e[1] & (s1_vppn[18:9] == tlb_vppn[1][18:9])  && ((s1_asid == tlb_asid[1])  || tlb_g[1]) && (tlb_ps[1] == 6'd21  || s1_vppn[8:0]==tlb_vppn[ 1][8:0]);
+assign match1[2]  = tlb_e[2] & (s1_vppn[18:9] == tlb_vppn[2][18:9])  && ((s1_asid == tlb_asid[2])  || tlb_g[2]) && (tlb_ps[2] == 6'd21  || s1_vppn[8:0]==tlb_vppn[ 2][8:0]);
+assign match1[3]  = tlb_e[3] & (s1_vppn[18:9] == tlb_vppn[3][18:9])  && ((s1_asid == tlb_asid[3])  || tlb_g[3]) && (tlb_ps[3] == 6'd21  || s1_vppn[8:0]==tlb_vppn[ 3][8:0]);
+assign match1[4]  = tlb_e[4] & (s1_vppn[18:9] == tlb_vppn[4][18:9])  && ((s1_asid == tlb_asid[4])  || tlb_g[4]) && (tlb_ps[4] == 6'd21  || s1_vppn[8:0]==tlb_vppn[ 4][8:0]);
+assign match1[5]  = tlb_e[5] & (s1_vppn[18:9] == tlb_vppn[5][18:9])  && ((s1_asid == tlb_asid[5])  || tlb_g[5]) && (tlb_ps[5] == 6'd21  || s1_vppn[8:0]==tlb_vppn[ 5][8:0]);
+assign match1[6]  = tlb_e[6] & (s1_vppn[18:9] == tlb_vppn[6][18:9])  && ((s1_asid == tlb_asid[6])  || tlb_g[6]) && (tlb_ps[6] == 6'd21  || s1_vppn[8:0]==tlb_vppn[ 6][8:0]);
+assign match1[7]  = tlb_e[7] & (s1_vppn[18:9] == tlb_vppn[7][18:9])  && ((s1_asid == tlb_asid[7])  || tlb_g[7]) && (tlb_ps[7] == 6'd21  || s1_vppn[8:0]==tlb_vppn[ 7][8:0]);
+assign match1[8]  = tlb_e[8] & (s1_vppn[18:9] == tlb_vppn[8][18:9])  && ((s1_asid == tlb_asid[8])  || tlb_g[8]) && (tlb_ps[8] == 6'd21  || s1_vppn[8:0]==tlb_vppn[ 8][8:0]);
+assign match1[9]  = tlb_e[9] & (s1_vppn[18:9] == tlb_vppn[9][18:9])  && ((s1_asid == tlb_asid[9])  || tlb_g[9]) && (tlb_ps[9] == 6'd21  || s1_vppn[8:0]==tlb_vppn[ 9][8:0]);
+assign match1[10] = tlb_e[10] & (s1_vppn[18:9] == tlb_vppn[10][18:9]) && ((s1_asid == tlb_asid[10]) || tlb_g[10]) && (tlb_ps[10] == 6'd21  || s1_vppn[8:0]==tlb_vppn[ 10][8:0]);
+assign match1[11] = tlb_e[11] & (s1_vppn[18:9] == tlb_vppn[11][18:9]) && ((s1_asid == tlb_asid[11]) || tlb_g[11]) && (tlb_ps[11] == 6'd21  || s1_vppn[8:0]==tlb_vppn[ 11][8:0]);
+assign match1[12] = tlb_e[12] & (s1_vppn[18:9] == tlb_vppn[12][18:9]) && ((s1_asid == tlb_asid[12]) || tlb_g[12]) && (tlb_ps[12] == 6'd21  || s1_vppn[8:0]==tlb_vppn[ 12][8:0]);
+assign match1[13] = tlb_e[13] & (s1_vppn[18:9] == tlb_vppn[13][18:9]) && ((s1_asid == tlb_asid[13]) || tlb_g[13]) && (tlb_ps[13] == 6'd21  || s1_vppn[8:0]==tlb_vppn[ 13][8:0]);
+assign match1[14] = tlb_e[14] & (s1_vppn[18:9] == tlb_vppn[14][18:9]) && ((s1_asid == tlb_asid[14]) || tlb_g[14]) && (tlb_ps[14] == 6'd21  || s1_vppn[8:0]==tlb_vppn[ 14][8:0]);
+assign match1[15] = tlb_e[15] & (s1_vppn[18:9] == tlb_vppn[15][18:9]) && ((s1_asid == tlb_asid[15]) || tlb_g[15]) && (tlb_ps[15] == 6'd21  || s1_vppn[8:0]==tlb_vppn[ 15][8:0]);
 
 assign is_match1 = |match1;
 assign s1_index = match1[ 0] ? 4'd0  :

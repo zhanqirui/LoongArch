@@ -20,7 +20,10 @@ module mem_stage(
     //to ws
     output                         ms_to_ws_valid,
     output [`MS_TO_WS_BUS_WD -1:0] ms_to_ws_bus  ,
-    
+    // from csr
+    input [`CSR_TO_MEM_BUS_WD-1:0] csr_to_mem_bus,
+    // to tlb
+    output [`MEM_TO_TLB_BUS_WD-1:0] mem_to_tlb_bus,
     //from data-sram
     input                          data_sram_data_ok,
     input  [31                 :0] data_sram_rdata
@@ -59,7 +62,70 @@ wire  [31:0] ms_pc_to_badv;
 wire  ms_Addr_exc;
 wire  [5:0] ms_Ecode;
 wire  [8:0] ms_EsubCode;
+wire [3:0] index;
 
+wire [3:0] w_index;
+wire [3:0] r_index;
+wire [5:0] w_ps;
+wire w_ne;
+wire [18:0] w_vppn;
+wire w_v0,w_d0, w_v1, w_d1, w_g0, w_g1;
+wire [1:0] w_plv0, w_mat0, w_plv1, w_mat1;
+wire [19:0] w_ppn0, w_ppn1;
+wire [9:0] w_asid;
+wire tlb_we;
+
+wire [2:0] tlbop;
+wire tlbcsr_rd_wen;
+
+
+assign tlbcsr_rd_wen = tlbop == 3'b010;
+assign tlb_we = tlbop == 3'b011 | tlbop == 3'b100;
+assign r_index = index;
+assign w_index = index;
+
+assign {
+    index,
+    w_ps,
+    w_ne,
+    w_vppn,
+    w_v0,
+    w_d0,
+    w_plv0,
+    w_mat0,
+    w_g0,
+    w_ppn0,
+    w_v1,
+    w_d1,
+    w_plv1,
+    w_mat1,
+    w_g1,
+    w_ppn1,
+    w_asid 
+} = csr_to_mem_bus;
+
+assign mem_to_tlb_bus = {
+    tlbcsr_rd_wen,
+    r_index,
+    tlb_we,
+    w_index,
+    w_ps,
+    w_ne,
+    w_vppn,
+    w_v0,
+    w_d0,
+    w_plv0,
+    w_mat0,
+    w_g0,
+    w_ppn0,
+    w_v1,
+    w_d1,
+    w_plv1,
+    w_mat1,
+    w_g1,
+    w_ppn1,
+    w_asid 
+};
 assign ms_to_ds_dest = ms_dest & {5{ms_valid}};
 
 assign {
@@ -80,7 +146,8 @@ assign {
         ms_pc_to_badv,
         ms_Addr_exc,
         ms_Ecode,
-        ms_EsubCode
+        ms_EsubCode,
+        tlbop
        } = es_to_ms_bus_r;
 
 assign ms_to_ds_exbus = {
