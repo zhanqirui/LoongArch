@@ -62,6 +62,8 @@ wire  [31:0] ms_pc_to_badv;
 wire  ms_Addr_exc;
 wire  [5:0] ms_Ecode;
 wire  [8:0] ms_EsubCode;
+wire  TLBR, is_TLB_exc;
+wire  ms_TLBR, ms_is_TLB_exc;
 wire [3:0] index;
 
 wire [3:0] w_index;
@@ -80,7 +82,7 @@ wire tlbcsr_rd_wen;
 
 
 assign tlbcsr_rd_wen = tlbop == 3'b010;
-assign tlb_we = tlbop == 3'b011 | tlbop == 3'b100;
+assign tlb_we = (tlbop == 3'b011 | tlbop == 3'b100) & ms_valid;
 assign r_index = index;
 assign w_index = index;
 
@@ -147,15 +149,21 @@ assign {
         ms_Addr_exc,
         ms_Ecode,
         ms_EsubCode,
-        tlbop
+        tlbop,
+        TLBR,
+        is_TLB_exc
        } = es_to_ms_bus_r;
+assign ms_TLBR = TLBR & ms_valid;
+assign ms_is_TLB_exc = is_TLB_exc & ms_valid;
 
 assign ms_to_ds_exbus = {
                         ms_pc_to_era,
                         ms_pc_to_badv,
                         ms_Addr_exc,
                         ms_Ecode,
-                        ms_EsubCode          
+                        ms_EsubCode,
+                        ms_TLBR,
+                        ms_is_TLB_exc       
 };
 
 assign ms_to_ds_is_exc = ms_is_exc && ms_valid;
@@ -170,7 +178,7 @@ assign ms_to_ws_bus = {ms_gr_we       ,  //69:69
 
 assign ms_to_ds_result = ms_final_result;
 
-assign ms_ready_go    = ~ms_st_or_ld | data_sram_data_ok | ms_bus_valid | ms_Addr_exc;
+assign ms_ready_go    = ~ms_st_or_ld | data_sram_data_ok | ms_bus_valid | ms_Addr_exc | ms_is_TLB_exc;
 assign ms_allowin     = !ms_valid || ms_ready_go && ws_allowin;
 assign ms_to_ws_valid = ms_valid && ms_ready_go ;
 //由于ms_valid只有在addr_ok来临的下一个周期才会变成1，其余时间都是0，但是在我的data_ok为1时，ms_ready_go才会为1，由于addr_ok和data_ok不一定正好只错开一个周期，

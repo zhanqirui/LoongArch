@@ -162,6 +162,9 @@ wire [`EXE_TO_TLB_BUS_WD-1:0] exe_to_tlb_bus;
 wire [`TLBSRH_TO_CSR_BUS_WD-1:0] tlbsrh_to_csr_bus;
 wire [`MEM_TO_TLB_BUS_WD-1:0] mem_to_tlb_bus;
 wire [`TLBRD_TO_CSR_BUS_WD-1:0] tlbrd_to_csr_bus;
+wire [`TLB_TO_IF_BUS_WD - 1: 0] tlb_to_if_bus;
+wire [`TLB_TO_IF_BUS_WD-1:0]  tlb_to_exe_bus;
+wire [`IF_TO_TLB_BUS_WD-1:0]    if_to_tlb_bus;
 
 // inst sram interface
 wire        inst_sram_req;
@@ -183,6 +186,8 @@ wire [31:0] data_sram_wdata;
 wire         data_sram_addr_ok;
 wire         data_sram_data_ok;
 wire  [31:0] data_sram_rdata;
+
+wire es_TLBR, es_PIL, es_PIS, es_PME, es_PPI;
 
 
 assign {    
@@ -215,6 +220,8 @@ assign {
     w_ppn1,
     w_asid 
 } = mem_to_tlb_bus;
+
+assign {s0_vppn, s0_asid, s0_va_bit12} = if_to_tlb_bus;
 
 axi_bridge u_axi_bridge (
     .clk(clk),
@@ -310,6 +317,10 @@ if_stage if_stage(
     .inst_sram_wr(inst_sram_wr),
     //csr_bus
     .ds_to_fs_csr_bus(ds_to_fs_csr_bus),
+    //to tlb
+    .if_to_tlb_bus(if_to_tlb_bus),
+    //from tlb
+    .tlb_to_if_bus(tlb_to_if_bus),
     //brbus
     .br_bus         (br_bus         ),
     //outputs
@@ -356,6 +367,11 @@ id_stage id_stage(
     .ws_to_ds_is_exc(ws_to_ds_is_exc),
     .ALE_exc(ALE_exc),
     .invtlb_op_exc(invtlb_op_exc),
+    .TLBR(es_TLBR),
+    .PPI(es_PPI),
+    .PIS(es_PIS),
+    .PIL(es_PIL),
+    .PME(es_PME),
     .es_pc(es_pc),
     .ds_to_fs_csr_bus(ds_to_fs_csr_bus),
     .ms_to_ds_exbus(ms_to_ds_exbus),
@@ -382,6 +398,11 @@ exe_stage exe_stage(
     .es_pc(es_pc),
     .ALE_exc(ALE_exc),
     .invtlb_op_exc(invtlb_op_exc),
+    .TLBR(es_TLBR),
+    .PPI(es_PPI),
+    .PIS(es_PIS),
+    .PIL(es_PIL),
+    .PME(es_PME),
     //from ds
     .ds_to_es_valid (ds_to_es_valid ),
     .ds_to_es_bus   (ds_to_es_bus   ),
@@ -396,6 +417,8 @@ exe_stage exe_stage(
     .csr_to_exe_bus (csr_to_exe_bus),
     // to tlb
     .exe_to_tlb_bus (exe_to_tlb_bus),
+    //from tlb
+    .tlb_to_exe_bus (tlb_to_exe_bus),
 
     // data sram interface
     .data_sram_req   (data_sram_req   ),
@@ -531,5 +554,7 @@ assign tlbsrh_to_csr_bus = { tlbcsr_srch_wen, ne_to_csr, index_to_csr};
 assign tlbrd_to_csr_bus = {tlbcsr_rd_wen, r_e, r_vppn, r_ps, r_asid, r_g, r_ppn0,r_plv0,
                            r_mat0, r_d0, r_v0, r_ppn1, r_plv1,r_mat1, 
                            r_d1, r_v1};
+assign tlb_to_if_bus = {s0_found, s0_index, s0_ppn, s0_ps, s0_plv, s0_mat, s0_d, s0_v};
+assign tlb_to_exe_bus = {s1_found, s1_index, s1_ppn, s1_ps, s1_plv, s1_mat, s1_d, s1_v};
 
 endmodule

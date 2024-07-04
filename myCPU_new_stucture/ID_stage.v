@@ -21,6 +21,8 @@ module id_stage(
     input   [31:0] es_pc,
     input          ALE_exc,
     input          invtlb_op_exc,
+    input          TLBR,
+    input          PIL, PIS, PPI, PME,
     input   [31:0] data_sram_addr,
     output                         ds_allowin    ,
     //from fs
@@ -84,6 +86,7 @@ wire [31:0] csr_eentry;
 wire        is_following_exc;
 wire [5:0]  Ecode;
 wire [8:0]  EsubCode;
+wire is_if_TLB_exc;
 
 wire        ADEF_exc;
 wire        INE_exc;
@@ -93,7 +96,9 @@ wire  [31:0] fms_pc_to_badv;
 wire  fms_Addr_exc;
 wire  [5:0] fms_Ecode;
 wire  [8:0] fms_EsubCode;
-
+wire fms_TLBR;
+wire fms_is_TLB_exc;
+wire  fs_TLBR, fs_PPI, fs_PIF;
 
 wire br_exc, era_exc;
 wire dest_is_rj;
@@ -443,16 +448,22 @@ assign INE_exc =  ~(inst_add_w | inst_sub_w | inst_slt | inst_sltu | inst_nor | 
 
 
 //! 触发BRK异常
-assign is_exc = ((inst_break | inst_syscall | ADEF_exc | INE_exc | need_interrupt) & ds_valid) | ALE_exc | invtlb_op_exc;
+assign is_exc = ((inst_break | inst_syscall | ADEF_exc | INE_exc | need_interrupt | fs_TLBR | fs_PPI | fs_PIF) & ds_valid) | ALE_exc | invtlb_op_exc | TLBR | PIS | PIL | PPI | PME;
 assign is_ret = inst_ertn & ds_valid;
-assign is_following_exc = es_to_ds_is_exc | ms_to_ds_is_exc | ws_to_ds_is_exc | ALE_exc | invtlb_op_exc;
+assign is_following_exc = es_to_ds_is_exc | ms_to_ds_is_exc | ws_to_ds_is_exc | ALE_exc | invtlb_op_exc| TLBR | PIS | PIL | PPI | PME;
 
 //! 记录异常信息
 assign Ecode = inst_syscall ? 6'hb :
                inst_break   ? 6'hc : 
                ADEF_exc     ? 6'h8 : 
                INE_exc      ? 6'hd : 
-               ALE_exc      ? 6'h9 : 
+               ALE_exc      ? 6'h9 :
+               TLBR | fs_TLBR         ? 6'h3f :
+               PIL          ? 6'h1 :
+               PIS          ? 6'h2 :
+               PPI | fs_PPI          ? 6'h7 :
+               PME          ? 6'h4 :
+               fs_PIF       ? 6'h3 : 
                6'h0;
 assign EsubCode = 9'h0;
 
@@ -487,7 +498,10 @@ regfile u_regfile(
 reg  [`FS_TO_DS_BUS_WD -1:0] fs_to_ds_bus_r;
 
 assign {ds_inst,
-        ds_pc  } = fs_to_ds_bus_r;
+        ds_pc,
+        fs_TLBR,
+        fs_PIF,
+        fs_PPI  } = fs_to_ds_bus_r;
 
 assign {rf_we   ,  //37:37
         rf_waddr,  //36:32
@@ -499,9 +513,13 @@ assign {
         fms_pc_to_badv,
         fms_Addr_exc,
         fms_Ecode,
-        fms_EsubCode
+        fms_EsubCode,
+        fms_TLBR,
+        fms_is_TLB_exc
 
 } = ms_to_ds_exbus;
+
+assign is_if_TLB_exc = (fs_TLBR | fs_PPI | fs_PIF) & ds_valid;
 
 assign load_op[0] = inst_ld_w;
 assign load_op[1] = inst_ld_b;
@@ -541,7 +559,8 @@ assign ds_to_es_bus = {alu_op       ,   // 28
                        EsubCode,
                        invtlb_valid,
                        invtlb_op,
-                       tlbop
+                       tlbop,
+                       is_if_TLB_exc
                     };
 
     //                     .pc_to_era(pc_to_era),
@@ -550,14 +569,6 @@ assign ds_to_es_bus = {alu_op       ,   // 28
     // .Ecode(Ecode),
     // .EsubCode(EsubCode)
 //csr_we, csr_num, rkd_value
-// 1 + 1 + 1 + 64 = 67
-assign ds_to_fs_csr_bus = {
-                  is_exc,
-                  ms_to_ds_is_exc,
-                  is_ret,
-                  csr_era, 
-                  csr_eentry
-};
 
 wire rj_eq_es_rd;
 wire rj_eq_ms_rd;
@@ -653,18 +664,32 @@ assign br_taken = (   inst_beq  &&  rj_eq_rd
 assign br_exc = br_taken & (br_target[1:0] != 2'b0);
 assign era_exc = is_ret & (csr_era[1:0] != 2'b00);
 
+wire is_exe_addr_exc = ALE_exc | TLBR | PIS | PIL | PPI | PME;
+wire is_if_addr_exc = fs_TLBR | fs_PIF | fs_PPI;
 //?异常处理程序的地址不会错误吗？
 assign pc_to_era = br_exc ? br_target : 
                    era_exc ? csr_era  :
-                   ALE_exc | invtlb_op_exc ? es_pc    :
+                   is_exe_addr_exc | invtlb_op_exc ? es_pc    :
                    ds_pc;
 
 assign pc_to_badv =  br_exc ? br_target : 
                      era_exc ? csr_era  :
-                     ALE_exc ? data_sram_addr :
+                     is_exe_addr_exc ? data_sram_addr :
+                     is_if_addr_exc  ? ds_pc : 
                      32'h0;
 
 assign Addr_exc = ADEF_exc | ALE_exc;
+
+wire [31:0] tlbenrty_out;
+wire [9:0] asid_out;
+wire crmd_da;
+wire crmd_pg;
+wire [2:0] dmw0_vseg, dmw1_vseg, dmw0_pseg, dmw1_pseg;
+wire dmw0_plv0, dmw0_plv3, dmw1_plv0, dmw1_plv3;
+wire dmw0_mat,dmw1_mat;
+wire [1:0] cur_plv;
+wire crmd_dataF;
+
 
 csr u_csr(
     .clk(clk),
@@ -679,19 +704,66 @@ csr u_csr(
     .tlbrd_to_csr_bus(tlbrd_to_csr_bus),
     .csr_to_exe_bus(csr_to_exe_bus),
     .csr_to_mem_bus(csr_to_mem_bus),
+    .tlbenrty_out (tlbenrty_out),
+    .asid_out (asid_out),
+    .crmd_da(crmd_da),
+    .crmd_pg(crmd_pg),
+    .dmw0_vseg(dmw0_vseg),
+    .dmw1_vseg(dmw1_vseg),
+    .dmw0_pseg(dmw0_pseg),
+    .dmw1_pseg(dmw1_pseg),
+    .dmw0_plv0(dmw0_plv0),
+    .dmw0_plv3(dmw0_plv3),
+    .dmw1_plv0(dmw1_plv0),
+    .dmw1_plv3(dmw1_plv3),
+    .dmw0_mat(dmw0_mat),
+    .dmw1_mat(dmw1_mat),
+    .cur_plv(cur_plv),
+    .crmd_dataF(crmd_dataF),
 
     .we(csr_we),
     .waddr(csr_num),
     .wdata(csr_wdata),
+
     .pc_to_era(fms_pc_to_era),
     .pc_to_badv(fms_pc_to_badv),
     .is_ret(is_ret),
     .is_exc(ms_to_ds_is_exc),
     .Addr_exc(fms_Addr_exc),
+    .TLBR(fms_TLBR),
+    .is_TLB_exc(fms_is_TLB_exc),
     .Ecode(fms_Ecode),
     .EsubCode(fms_EsubCode)
 
 );
+
+// 1 + 1 + 1 + 64 = 67
+assign ds_to_fs_csr_bus = {
+                  is_exc,
+                  ms_to_ds_is_exc,
+                  is_ret,
+                  csr_era, 
+                  csr_eentry,
+                  //32 + 10 + 2 + 12 + 6 + 2 + 1 = 65
+                  tlbenrty_out,
+                  asid_out,
+                  crmd_da,
+                  crmd_pg,
+                  dmw0_vseg,
+                  dmw1_vseg,
+                  dmw0_pseg,
+                  dmw1_pseg,
+                  dmw0_plv0,
+                  dmw1_plv0,
+                  dmw0_plv3,
+                  dmw1_plv3,
+                  cur_plv,
+                  dmw0_mat,
+                  dmw1_mat,
+                  crmd_dataF,
+                  fms_TLBR
+};
+
 
 
 // csr_we, csr_num, rkd_value

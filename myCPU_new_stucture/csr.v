@@ -14,6 +14,17 @@ module csr(
 
     input [13:0] raddr,
     input [31:0] rj_value,
+
+    output [31:0] tlbenrty_out,
+    output [9:0] asid_out,
+    output crmd_da,
+    output crmd_pg,
+    output [2:0] dmw0_vseg, dmw1_vseg, dmw0_pseg, dmw1_pseg,
+    output dmw0_plv0, dmw0_plv3, dmw1_plv0, dmw1_plv3,
+    output dmw0_mat,dmw1_mat,
+    output [1:0] cur_plv,
+    output crmd_dataF,
+
     output[31:0] rdata,
     output reg[31:0] ERA,
     output reg[31:0] EENTRY,
@@ -29,7 +40,7 @@ module csr(
     input [31:0] wdata,
     input [31:0] pc_to_era,
     input [31:0] pc_to_badv,
-    input is_exc, is_ret, Addr_exc,
+    input is_exc, is_ret, Addr_exc,TLBR,is_TLB_exc,
     input [5:0] Ecode,
     input [8:0] EsubCode
     
@@ -38,6 +49,15 @@ module csr(
 reg [31:0] CRMD, PRMD, ESTAT, SAVE1, SAVE2, SAVE3, SAVE0;
 reg [31:0] ECFG, BADV, TID, TCFG, TVAL, TICLR;
 reg [31:0] TLBIDX, TLBEHI, TLBELO0, TLBELO1, ASID, TLBRENTRY;
+reg [31:0] DMW0, DMW1;
+
+reg is_last_exc;
+
+always@(posedge clk)
+    if(reset)
+        is_last_exc <= 1'b0;
+    else
+        is_last_exc <= is_exc;
 
 reg  TCFG_En;
 reg TCFG_Periodic;
@@ -112,7 +132,19 @@ assign r_asid = ASID[9:0];
 
 assign csr_to_exe_bus = {
                         r_vppn,
-                        r_asid
+                        r_asid,
+                        //2+12+4+2=20
+                        crmd_da,
+                        crmd_pg,
+                        dmw0_vseg,
+                        dmw1_vseg,
+                        dmw0_pseg,
+                        dmw1_pseg,
+                        dmw0_plv0,
+                        dmw1_plv0,
+                        dmw0_plv3,
+                        dmw1_plv3,
+                        cur_plv
 };
 
 assign csr_to_mem_bus = {
@@ -135,13 +167,31 @@ assign csr_to_mem_bus = {
                         r_asid 
 };
 
+//给新增信号赋值
+assign tlbenrty_out = TLBRENTRY;
+assign asid_out = ASID[9:0];
+assign crmd_da = CRMD[3];
+assign crmd_pg = CRMD[4];
+assign dmw0_vseg = DMW0[31:29];
+assign dmw1_vseg = DMW1[31:29];
+assign dmw0_pseg = DMW0[27:25];
+assign dmw1_pseg = DMW1[27:25];
+assign dmw0_plv0 = DMW0[0];
+assign dmw1_plv0 = DMW1[0];
+assign dmw0_plv3 = DMW0[3];
+assign dmw1_plv3 = DMW1[3];
+assign dmw0_mat  = DMW0[4];
+assign dmw1_mat  = DMW1[4];
+assign cur_plv   = CRMD[1:0];
+assign crmd_dataF = CRMD[7];
+
 // 0 和 1
 always@(posedge clk) begin
     if(reset)begin
         CRMD <= 32'h00000008;//初始化要求！
         PRMD <= 32'h00000000;
     end
-    else if(is_exc) begin
+    else if(is_exc & ~is_last_exc) begin
         //PPLV = PLV
         PRMD[1:0] <= CRMD[1:0];
         // PIE = IE
@@ -150,10 +200,21 @@ always@(posedge clk) begin
         CRMD[1:0] <= 2'b0;
         // IE置0
         CRMD[2] <= 1'b0;
+        if(TLBR)begin
+            CRMD[3] <= 1'b1;
+            CRMD[4] <= 1'b0;
+            // CRMD[6:5] <= 2'b00;
+        end
     end
     else if(is_ret) begin
         CRMD[1:0] <= PRMD[1:0];
         CRMD[2] <= PRMD[2];
+        if(ESTAT[21:16] == 6'h3f)begin
+            CRMD[3] <= 1'b0;
+            CRMD[4] <= 1'b1;
+            // CRMD[6:5] <= 2'b01;
+            // CRMD[8:7] <= 2'b01;
+        end
     end
     else if(we[0])begin
         if(waddr == 14'h0)
@@ -241,7 +302,7 @@ always@(posedge clk)
 always@(posedge clk)
     if(reset)
         BADV <= 32'h00000000;
-    else if(Addr_exc)
+    else if(Addr_exc || is_TLB_exc)
         BADV <= pc_to_badv;
     else if(we[0] && waddr == 14'h7)
         BADV <= wdata;
@@ -283,6 +344,8 @@ always@(posedge clk)
     else if(tlbcsr_rd_wen)begin
         TLBEHI[31:13] <= w_vppn; 
     end
+    else if(is_TLB_exc)
+        TLBEHI[31:13] <= pc_to_badv[31:13];
     else if(we[0] && waddr == 14'h11)
         TLBEHI <= wdata;
     else if(we[1] && waddr == 14'h11)
@@ -463,6 +526,24 @@ always@(posedge clk)
     else if(we[1] && waddr == 14'h88)
         TLBRENTRY <= TLBRENTRY & ~rj_value | wdata & rj_value;
 
+//180
+always@(posedge clk)
+    if(reset)
+        DMW0 <= 32'h00000000;
+    else if(we[0] && waddr == 14'h180)
+        DMW0 <= wdata;
+    else if(we[1] && waddr == 14'h180)
+        DMW0 <= TLBRENTRY & ~rj_value | wdata & rj_value;
+
+//181
+always@(posedge clk)
+    if(reset)
+        DMW1 <= 32'h00000000;
+    else if(we[0] && waddr == 14'h181)
+        DMW1 <= wdata;
+    else if(we[1] && waddr == 14'h181)
+        DMW1 <= TLBRENTRY & ~rj_value | wdata & rj_value;
+
 assign rdata = raddr == 14'h0 ? {23'b0, CRMD[8:0]} :
                raddr == 14'h1 ? {29'b0, PRMD[2:0]} :
                raddr == 14'h4 ? {19'b0, ECFG[12:11], 1'b0, ECFG[9:0]} :
@@ -483,6 +564,8 @@ assign rdata = raddr == 14'h0 ? {23'b0, CRMD[8:0]} :
                raddr == 14'h42 ? {`SUB_N'b0, TVAL_TimeVal} : 
                raddr == 14'h44 ? 32'h0 : 
                raddr == 14'h88 ? {TLBRENTRY[31:6], 6'b0} : 
+               raddr == 14'h180 ? {DMW0[31:29], 1'b0, DMW0[27:25], 19'b0, DMW0[5:3], 2'b0, DMW0[0]} :
+               raddr == 14'h181 ? {DMW1[31:29], 1'b0, DMW1[27:25], 19'b0, DMW1[5:3], 2'b0, DMW1[0]} :
                32'h0;
 
 
